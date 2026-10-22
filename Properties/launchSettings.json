@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "ClinicCameraCapture (Package)": {
+      "commandName": "MsixPackage"
+    },
+    "ClinicCameraCapture (Unpackaged)": {
+      "commandName": "Project"
+    }
+  }
+}

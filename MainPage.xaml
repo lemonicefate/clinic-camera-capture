@@ -1,0 +1,165 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page x:Class="ClinicCameraCapture.MainPage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+      xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+      RequestedTheme="Dark" mc:Ignorable="d">
+
+    <Grid x:Name="CameraRoot" Background="#080C12">
+        <!-- Preserve the whole 4:3 endoscope frame in a 16:9 monitor. Black sidebars are intentional. -->
+        <MediaPlayerElement x:Name="PreviewElement" AutoPlay="True"
+                            AreTransportControlsEnabled="False" Stretch="Uniform"
+                            HorizontalAlignment="Stretch" VerticalAlignment="Stretch"/>
+        <TextBlock x:Name="EmptyPreviewText" Text="搜尋影像擷取裝置中…"
+                   Foreground="#CCD8E4EC" FontSize="24"
+                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
+
+        <!-- Minimal top strip: settings, patient number, recording status -->
+        <Border Background="#D0171C23" Height="82" VerticalAlignment="Top">
+            <Grid ColumnDefinitions="Auto,*,Auto" Padding="18,8,22,8">
+                <Button x:Name="SettingsButton" Grid.Column="0" Click="SettingsButton_Click"
+                        Width="54" Height="54" CornerRadius="12" Background="#283542"
+                        ToolTipService.ToolTip="設定與相機選擇">
+                    <FontIcon Glyph="&#xE713;" FontSize="25"/>
+                </Button>
+                <StackPanel Grid.Column="1" Orientation="Horizontal"
+                            HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="10">
+                    <TextBlock Text="病歷號" FontSize="17" VerticalAlignment="Center" Foreground="#FFE4EDF3"/>
+                    <TextBox x:Name="PatientNumberBox" Width="220" Height="47"
+                             FontFamily="Consolas" FontSize="23"
+                             MaxLength="6" PlaceholderText="六位數病歷號"
+                             TextChanged="PatientNumberBox_TextChanged"
+                             HorizontalTextAlignment="Center"/>
+                    <TextBlock x:Name="PatientHintText" VerticalAlignment="Center" Foreground="#FFEFC78B"
+                               Text="請先輸入六位數病歷號"/>
+                </StackPanel>
+                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Spacing="10">
+                    <TextBlock x:Name="RecordingIndicator" Text="● REC" Foreground="#FFFF5252"
+                               Visibility="Collapsed" FontWeight="Bold" FontSize="18" VerticalAlignment="Center"/>
+                    <TextBlock x:Name="ModeLabel" Text="拍照模式" Foreground="#CCDDE5EF"
+                               VerticalAlignment="Center" FontSize="16"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- A single action button on the right, mode is changed in settings. -->
+        <Border Background="#B012171E" Width="112" HorizontalAlignment="Right">
+            <Grid RowDefinitions="Auto,*,Auto" Padding="8,90,8,18">
+                <TextBlock Grid.Row="0" Text="MVP v0.3" Foreground="#99EDF1F5"
+                           HorizontalAlignment="Center" FontSize="12"/>
+                <StackPanel Grid.Row="1" VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="12">
+                    <Button x:Name="ShutterButton" Click="ShutterButton_Click"
+                            Content="●" FontSize="38" Foreground="#20232A"
+                            Background="White" BorderThickness="5" BorderBrush="#CCDCE1E8"
+                            Width="78" Height="78" CornerRadius="39" IsEnabled="False"
+                            ToolTipService.ToolTip="拍照快捷鍵 F9"/>
+                    <TextBlock x:Name="ShutterLabel" Text="拍照" Foreground="White"
+                               HorizontalAlignment="Center" FontSize="16"/>
+                </StackPanel>
+                <StackPanel Grid.Row="2" HorizontalAlignment="Center" Spacing="8">
+                    <Button x:Name="ThumbnailButton" Width="82" Height="64"
+                            Background="#25303C" BorderBrush="#8BB9D0"
+                            BorderThickness="1" CornerRadius="7"
+                            IsEnabled="False" Click="ThumbnailButton_Click"
+                            ToolTipService.ToolTip="放大檢視上一張照片">
+                        <Grid>
+                            <Image x:Name="ThumbnailImage" Stretch="UniformToFill"/>
+                            <TextBlock x:Name="ThumbnailPlaceholder" Text="照片"
+                                       Foreground="#CCD4E7EE" FontSize="13"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Grid>
+                    </Button>
+                    <TextBlock Text="檢視照片" Foreground="#B0D6E0E8" FontSize="12"
+                               HorizontalAlignment="Center"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <InfoBar x:Name="ResultBar" IsOpen="False"
+                 VerticalAlignment="Bottom" HorizontalAlignment="Left"
+                 MaxWidth="740" Margin="20,0,128,22"
+                 Severity="Informational" IsClosable="True"
+                 Title="準備中" Message="Windows 原生相機 MVP，不連接 HIS"/>
+
+        <!-- The engineering controls live in a settings drawer, not on the camera canvas. -->
+        <Grid x:Name="SettingsLayer" Visibility="Collapsed" Background="#A9000000">
+            <Border Background="#FF222A34" Width="455" HorizontalAlignment="Left"
+                    CornerRadius="0,18,18,0" Padding="24,20" BorderBrush="#55687F90"
+                    BorderThickness="0,0,1,0">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Spacing="14">
+                        <Grid ColumnDefinitions="*,Auto">
+                            <TextBlock Text="相機設定" FontSize="27" FontWeight="SemiBold"/>
+                            <Button Grid.Column="1" Content="關閉 ×" Click="CloseSettingsButton_Click"/>
+                        </Grid>
+                        <TextBlock Text="此版本僅寫入獨立的本機測試目錄，不連接 WM003。"
+                                   TextWrapping="Wrap" Foreground="#F0CC9A"/>
+                        <TextBlock Text="影像裝置" FontWeight="SemiBold"/>
+                        <ComboBox x:Name="CameraPicker" Width="390" HorizontalAlignment="Left"
+                                  DisplayMemberPath="Name"
+                                  SelectionChanged="CameraPicker_SelectionChanged"/>
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Button x:Name="RefreshButton" Content="重新搜尋" Click="RefreshButton_Click"/>
+                            <Button x:Name="StartButton" Content="開始預覽" Click="StartButton_Click"/>
+                            <Button x:Name="StopButton" Content="停止預覽" Click="StopButton_Click"/>
+                        </StackPanel>
+                        <TextBlock x:Name="DeviceDetailText" Text="尚未連線" TextWrapping="Wrap"
+                                   Foreground="#B6DCE4" FontSize="12"/>
+                        <TextBlock Text="操作模式" FontWeight="SemiBold"/>
+                        <ComboBox x:Name="ModePicker" Width="390" SelectedIndex="0"
+                                  SelectionChanged="ModePicker_SelectionChanged">
+                            <ComboBoxItem Content="拍照" Tag="photo"/>
+                            <ComboBoxItem Content="錄影" Tag="video"/>
+                        </ComboBox>
+                        <TextBlock Text="照片格式" FontWeight="SemiBold"/>
+                        <ComboBox x:Name="FormatPicker" Width="390" SelectedIndex="0"
+                                  SelectionChanged="FormatPicker_SelectionChanged">
+                            <ComboBoxItem Content="PNG（無損壓縮）" Tag="png"/>
+                            <ComboBoxItem Content="BMP（未壓縮）" Tag="bmp"/>
+                        </ComboBox>
+                        <TextBlock Text="拍照快捷鍵（程式在前景時）" FontWeight="SemiBold"/>
+                        <ComboBox x:Name="ShortcutPicker" Width="390" SelectedIndex="1"
+                                  SelectionChanged="ShortcutPicker_SelectionChanged">
+                            <ComboBoxItem Content="F8" Tag="F8"/>
+                            <ComboBoxItem Content="F9" Tag="F9"/>
+                            <ComboBoxItem Content="F10" Tag="F10"/>
+                            <ComboBoxItem Content="F12" Tag="F12"/>
+                        </ComboBox>
+                        <CheckBox x:Name="FullScreenCheckBox" Content="啟動時全螢幕"
+                                  Checked="FullScreenCheckBox_Changed"
+                                  Unchecked="FullScreenCheckBox_Changed"/>
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Button Content="切換全螢幕（F11）" Click="FullScreenButton_Click"/>
+                            <Button Content="開啟照片資料夾" Click="OpenFolderButton_Click"/>
+                        </StackPanel>
+                        <TextBlock Text="相機支援的預覽格式" FontWeight="SemiBold"/>
+                        <ComboBox x:Name="FrameFormatPicker" Width="390" DisplayMemberPath="Label"
+                                  SelectionChanged="FrameFormatPicker_SelectionChanged"/>
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Button x:Name="ApplyFormatButton" Content="套用格式" Click="ApplyFormatButton_Click"/>
+                            <Button x:Name="CopyFormatsButton" Content="複製格式列表" Click="CopyFormatsButton_Click"/>
+                        </StackPanel>
+                        <TextBlock x:Name="FrameFormatNote" Text="開始預覽後可查看裝置的支援格式。"
+                                   Foreground="#ADCDD9" TextWrapping="Wrap"/>
+                        <TextBlock Text="640×480 放大後不會增加影像細節。全螢幕維持 4:3 來源比例，兩側黑邊是正常現象。"
+                                   TextWrapping="Wrap" Foreground="#AFC3D2"/>
+                    </StackPanel>
+                </ScrollViewer>
+            </Border>
+        </Grid>
+
+        <!-- Last still photo in a dark full-canvas lightbox. -->
+        <Grid x:Name="PhotoOverlay" Visibility="Collapsed" Background="#FF07090C"
+              Tapped="PhotoOverlay_Tapped">
+            <Image x:Name="FullPhotoImage" Stretch="Uniform" Margin="16,72,16,16"/>
+            <Border Background="#D0202730" Height="65" VerticalAlignment="Top">
+                <Grid ColumnDefinitions="*,Auto" Padding="20,10">
+                    <TextBlock x:Name="PhotoTitle" Text="最近一張照片" FontSize="17"
+                               Foreground="#FFF4F6F9" VerticalAlignment="Center"/>
+                    <Button Grid.Column="1" Content="返回相機  Esc" Click="ClosePhotoButton_Click"/>
+                </Grid>
+            </Border>
+        </Grid>
+    </Grid>
+</Page>
