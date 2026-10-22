@@ -120,6 +120,7 @@ internal static class Program
             catch (ArgumentException) { invalid = true; }
             Require(invalid, "blank output path must still fail");
             Console.WriteLine("PASS: unrestricted folder selection including UNC, roots and HIS-looking paths.");
+            await PatientDbfSmoke.RunAsync(root);
             return 0;
         }
         catch (Exception ex)

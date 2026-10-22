@@ -1,4 +1,4 @@
-# MVP v0.4.1 diagnostics and validation — 2026-10-22
+# MVP v0.5 diagnostics and validation — 2026-10-23
 
 ## Method (mattpocock/skills: diagnosing-bugs)
 
@@ -27,12 +27,12 @@
 - The self-contained Windows x64 Release publish **was launched on the development PC and remained responsive with a real window handle**.
 - An automated F9 foreground-input probe found no reliable WinUI UI Automation feedback via the outer window; **keyboard shortcut trigger is not independently verified**. Only the code binding and successful application startup are verified.
 - The original user-reported v0.1 preview+photo worked on Windows 10 with USB2.0 PC CAMERA, 640×480; this remains the only confirmed physical-card evidence.
-- v0.4.1 Windows x64 test deployment should use a fresh self-contained Release build. Deployment is not a clinical release.
+- v0.5 adds **optional read-only PD011M1.dbf patient lookup**. Synthetic VFP DBF with CP950 Chinese names verified: NUM forward lookup (including padding), ID reverse lookup (case-insensitive), empty ID displayed as 0000+NUM, deleted rows excluded, and non-exclusive reading while a simulated writer holds the file. No CDX or real HIS file was accessed. Physical HIS DBF format compatibility is **not yet verified**. Windows x64 testing requires a new self-contained Release build; not a clinical release.
 
 ## UI and camera **not yet conclusively tested**
 
 - The actual **shortcut problem** happens on the clinic capture workstation, not reproducibly on the no-physical-camera development PC. Framework-based `KeyboardAccelerator` replaces the weak root `KeyDown` binding, but exact on-device F8/F9/F10/F12 use with focused patient field **needs field verification**. Do not describe this as fully proven fixed until tested.
-- WinUI FolderPicker, path selection UI (especially UNC permissions and WinRT video APIs), gallery prev/next buttons, and top-right close while full-screen need physical interactive field verification. Explicitly selecting a folder under HIS does not register a corresponding HIS photo index.
+- WinUI FileOpenPicker for PD011M1, both LostFocus query flows, gallery left/right arrow keys, folder picker, and actual camera/recording still need interactive physical validation. No real patient details should be included in bug screenshots or logs. WinUI FolderPicker, path selection UI (especially UNC permissions and WinRT video APIs), gallery prev/next buttons, and top-right close while full-screen need physical interactive field verification. Explicitly selecting a folder under HIS does not register a corresponding HIS photo index.
 - USB capture-card MP4 recording, abrupt disconnection, backup, permissions, disk exhaustion and shared drive behavior remain untested.
-- The MVP intentionally doesn't open HIS DBF or write `CH013M1`. Patient IDs can be identifying information; use **synthetic IDs only**.
+- The v0.5 app allows a user to configure **PD011M1.dbf for read-only NUM/ID/NAME lookup**, using FileAccess.Read, FileShare.ReadWrite|Delete and a transient in-memory index. It does **not** read/write CDX/FPT or CH013M1. No real patient data were read during implementation/testing. Actual DBF field types, CP950 strings, file mutation timing, patient identity ambiguity, and UI focus behavior require clinic validation, initially on an isolated DBF copy.
 - Per-patient numbering is **per selected storage directory**, up to 99; the program refuses after full and does not delete or overwrite.

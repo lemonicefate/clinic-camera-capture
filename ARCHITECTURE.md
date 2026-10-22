@@ -1,6 +1,6 @@
 # Clinic Camera Capture — ARCHITECTURE.md
 
-**範圍：** Windows 原生相機 UI + 使用者自訂路徑存檔（MVP v0.4.1；HIS 病歷索引仍不連接）。
+**範圍：** Windows 原生相機 UI + 自訂路徑存檔 + 選配 PD011M1 唯讀查詢（MVP v0.5；HIS 影像索引仍不連接）。
 
 詳見 [SPEC.md](SPEC.md) 及 [DESIGN.md](DESIGN.md)。
 
@@ -23,10 +23,13 @@ flowchart TD
     Prefs --> Settings[LocalAppData settings.json]
     Local --> Viewer[Thumbnail / Photo Overlay]
     Viewer --> UI
-    HIS[正式 WM003 / CH013M1 / PD011M1 - 不連接]
+    UI --> Lookup[PatientLookupService：記憶體 NUM/ID 索引]
+    Lookup --> DbfReader[PatientDbfReader：CP950 FileAccess.Read]
+    DbfReader -.-> PatientDbf[使用者指定 PD011M1.dbf 唯讀]
+    HIS[CH013M1 / CDX / FPT - 不開啟不寫入]
 ```
 
-核心原則：**與 HIS 沒有連線**。原 HIS 的 DBF、CDX、FPT、圖片與索引在本專案不是可寫入或可讀取的資料來源。
+核心原則：**只讀取使用者明確指定的 PD011M1.dbf**，並在 RAM 建立 NUM／ID 索引；不開啟、修改或重建 CDX、FPT、CH013M1 或其他 HIS 檔案。照片的自訂輸出位置與 HIS 查詢是互相獨立的流程。
 
 ## 2. 程式模組
 
@@ -40,7 +43,10 @@ flowchart TD
 | `CaptureIdentity.cs` | 1–6 位 ASCII 數字標準化為六位、照片 01–99 命名與錄影命名 |
 | `CaptureStore.cs` | PNG/BMP 校驗、同磁碟暫存/驗證、跨副檔名 01–99 流水號，使用本機 mutex 避免競爭及覆寫 |
 | `PhotoBatch.cs` | 本次 App 執行期間，以標準化六位號碼隔離同病歷號照片清單 |
-| `tests/CaptureStore.Smoke` | 合成影像、流水號占用、99 上限、批次分組與路徑驗證回歸測試 |
+| `PatientDbfPathPolicy.cs` | 檢查設定路徑的檔名必須為 PD011M1.dbf，不開啟資料 |
+| `PatientDbfReader.cs` | 非獨占 FileAccess.Read、FileShare.ReadWrite/Delete，解析 DBF/C/N 欄位與 CP950，排除刪除標記並在 RAM 建 NUM/ID lookup |
+| `PatientLookupService.cs` | 非同步重建 RAM lookup，依 DBF 路徑／檔案長度／修改時間快取；讀取期間變更則重試 |
+| `tests/CaptureStore.Smoke` | 合成影像、照片流水號及合成 Visual FoxPro DBF 的 CP950／NUM／ID／邏輯刪除／共享唯讀測試 |
 | `AGENTS.md` | 正式 HIS 不能讀寫的工程作業限制 |
 
 目前 `MainPage.xaml.cs` 同時承擔 UI 與攝影機 orchestrator，這是 MVP 的簡化實作；未來功能增加才拆分為 camera service、recorder、view model，避免虛構目前不存在的分層。

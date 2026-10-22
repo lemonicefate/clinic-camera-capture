@@ -12,5 +12,8 @@
     <Compile Include="../../CaptureIdentity.cs" Link="CaptureIdentity.cs" />
     <Compile Include="../../PhotoBatch.cs" Link="PhotoBatch.cs" />
     <Compile Include="../../CameraPreferences.cs" Link="CameraPreferences.cs" />
+    <Compile Include="../../PatientDbfReader.cs" Link="PatientDbfReader.cs" />
+    <Compile Include="../../PatientDbfPathPolicy.cs" Link="PatientDbfPathPolicy.cs" />
+    <Compile Include="../../PatientLookupService.cs" Link="PatientLookupService.cs" />
   </ItemGroup>
 </Project>

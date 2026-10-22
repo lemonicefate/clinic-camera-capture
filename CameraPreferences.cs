@@ -11,6 +11,7 @@ public sealed class CameraPreferences
     public string Mode { get; set; } = "photo";
     public bool FullScreen { get; set; } = true;
     public string OutputFolder { get; set; } = CaptureStore.Folder;
+    public string PatientDbfPath { get; set; } = "";
 
     private static string ConfigPath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -28,6 +29,11 @@ public sealed class CameraPreferences
             if (saved.Mode is not ("photo" or "video")) saved.Mode = "photo";
             try { saved.OutputFolder = OutputFolderPolicy.Normalize(saved.OutputFolder); }
             catch (ArgumentException) { saved.OutputFolder = CaptureStore.Folder; }
+            if (!string.IsNullOrWhiteSpace(saved.PatientDbfPath))
+            {
+                try { saved.PatientDbfPath = PatientDbfPathPolicy.Normalize(saved.PatientDbfPath); }
+                catch (ArgumentException) { saved.PatientDbfPath = ""; }
+            }
             return saved;
         }
         catch (Exception) { return new CameraPreferences(); }
@@ -36,6 +42,8 @@ public sealed class CameraPreferences
     public void Save()
     {
         OutputFolder = OutputFolderPolicy.Normalize(OutputFolder);
+        if (!string.IsNullOrWhiteSpace(PatientDbfPath))
+            PatientDbfPath = PatientDbfPathPolicy.Normalize(PatientDbfPath);
         var target = ConfigPath;
         Directory.CreateDirectory(Path.GetDirectoryName(target)!);
         var temporary = target + "." + Guid.NewGuid().ToString("N") + ".tmp";

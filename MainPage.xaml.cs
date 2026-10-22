@@ -21,8 +21,8 @@ using Windows.UI;
 namespace ClinicCameraCapture;
 
 /// <summary>
-/// Camera-first WinUI 3 UI. All files stay under the MVP-only local test folder.
-/// This code does not open HIS DBF files or write an HIS photo index.
+/// Camera-first WinUI 3 UI with optional read-only PD011M1 lookup.
+/// Photos use a user-selected output path; no HIS DBF/CDX writes or photo indexing.
 /// </summary>
 public sealed partial class MainPage : Page
 {
@@ -33,7 +33,13 @@ public sealed partial class MainPage : Page
     private CameraPreferences _preferences = CameraPreferences.Load();
     private CaptureStore CurrentStore => new(_preferences.OutputFolder);
     private readonly PhotoBatch _batch = new();
+    private readonly PatientLookupService _patientLookup = new();
     private readonly KeyboardAccelerator _photoAccelerator = new();
+    private bool _updatingPatientFields;
+    private bool _patientLookupBusy;
+    private int _patientLookupGeneration;
+    private string? _resolvedPatientNumber;
+    private string? _resolvedPatientId;
     private MediaCapture? _camera;
     private MediaFrameSource? _frameSource;
     private List<FormatChoice> _supportedFormats = new();
@@ -51,6 +57,7 @@ public sealed partial class MainPage : Page
         SelectTag(ShortcutPicker, _preferences.Shortcut);
         FullScreenCheckBox.IsChecked = _preferences.FullScreen;
         OutputFolderBox.Text = _preferences.OutputFolder;
+        PatientDbfPathBox.Text = _preferences.PatientDbfPath;
         _photoAccelerator.Key = Enum.Parse<VirtualKey>(_preferences.Shortcut);
         _photoAccelerator.Invoked += PhotoAccelerator_Invoked;
         CameraRoot.KeyboardAccelerators.Add(_photoAccelerator);
@@ -93,7 +100,10 @@ public sealed partial class MainPage : Page
         ResultBar.IsOpen = true;
     }
 
-    private bool HasValidPatient => CaptureIdentity.IsValid(PatientNumberBox.Text);
+    private bool HasValidPatient => CaptureIdentity.IsValid(PatientNumberBox.Text) &&
+        !_patientLookupBusy &&
+        (string.IsNullOrWhiteSpace(_preferences.PatientDbfPath) ||
+         string.Equals(_resolvedPatientNumber, CaptureIdentity.Require(PatientNumberBox.Text), StringComparison.Ordinal));
 
     private void UpdateButtons()
     {
@@ -104,6 +114,7 @@ public sealed partial class MainPage : Page
         StopButton.IsEnabled = !_busy && !_recording && _camera is not null;
         ShutterButton.IsEnabled = !_busy && _camera is not null && (_recording || HasValidPatient);
         PatientNumberBox.IsEnabled = !_recording;
+        PatientIdBox.IsEnabled = !_recording;
         ModePicker.IsEnabled = !_busy && !_recording;
         FormatPicker.IsEnabled = !_busy && !_recording;
         FrameFormatPicker.IsEnabled = !_busy && !_recording && _frameSource is not null;
@@ -111,7 +122,10 @@ public sealed partial class MainPage : Page
             && FrameFormatPicker.SelectedItem is FormatChoice;
         CopyFormatsButton.IsEnabled = !_busy && _supportedFormats.Count > 0;
         ThumbnailButton.IsEnabled = _batch.For(PatientNumberBox.Text).Count > 0;
-        PatientHintText.Text = HasValidPatient ? "✓ " + CaptureIdentity.Require(PatientNumberBox.Text) : "輸入 1–6 位數字";
+        PatientHintText.Text = _patientLookupBusy ? "查詢中…" :
+            HasValidPatient ? "✓ " + CaptureIdentity.Require(PatientNumberBox.Text) :
+            CaptureIdentity.IsValid(PatientNumberBox.Text) && !string.IsNullOrWhiteSpace(_preferences.PatientDbfPath)
+                ? "尚未確認患者" : "輸入病歷號或身分證";
         PatientHintText.Foreground = new SolidColorBrush(HasValidPatient ? Colors.LightGreen : Colors.Wheat);
     }
 
@@ -148,15 +162,160 @@ public sealed partial class MainPage : Page
 
     private async void PatientNumberBox_TextChanged(object sender, TextChangedEventArgs e)
     {
+        if (_updatingPatientFields) return;
+        _patientLookupGeneration++;
+        _resolvedPatientNumber = null;
+        _resolvedPatientId = null;
+        _patientLookupBusy = false;
+        _updatingPatientFields = true;
+        PatientIdBox.Text = "";
+        PatientNameBox.Text = "";
+        _updatingPatientFields = false;
         UpdateButtons();
         try { await RefreshBatchThumbnailAsync(); }
-        catch (Exception ex) { SetStatus("讀取縮圖失敗", ex.Message, InfoBarSeverity.Warning); }
+        catch { SetStatus("縮圖載入失敗", "目前無法載入照片縮圖。", InfoBarSeverity.Warning); }
     }
 
-    private void PatientNumberBox_LostFocus(object sender, RoutedEventArgs e)
+    private async void PatientIdBox_TextChanged(object sender, TextChangedEventArgs e)
     {
-        if (HasValidPatient)
-            PatientNumberBox.Text = CaptureIdentity.Require(PatientNumberBox.Text);
+        if (_updatingPatientFields) return;
+        _patientLookupGeneration++;
+        _resolvedPatientNumber = null;
+        _resolvedPatientId = null;
+        _patientLookupBusy = false;
+        _updatingPatientFields = true;
+        PatientNumberBox.Text = "";
+        PatientNameBox.Text = "";
+        _updatingPatientFields = false;
+        UpdateButtons();
+        try { await RefreshBatchThumbnailAsync(); }
+        catch { SetStatus("縮圖載入失敗", "目前無法載入照片縮圖。", InfoBarSeverity.Warning); }
+    }
+
+    private async void PatientNumberBox_LostFocus(object sender, RoutedEventArgs e)
+    {
+        if (!CaptureIdentity.IsValid(PatientNumberBox.Text)) return;
+        string normalized = CaptureIdentity.Require(PatientNumberBox.Text);
+        _updatingPatientFields = true;
+        PatientNumberBox.Text = normalized;
+        _updatingPatientFields = false;
+        await ResolvePatientAsync(byId: false, normalized);
+    }
+
+    private async void PatientIdBox_LostFocus(object sender, RoutedEventArgs e)
+    {
+        string typed = PatientIdBox.Text.Trim().ToUpperInvariant();
+        if (typed.Length == 0 || (typed == _resolvedPatientId && HasValidPatient)) return;
+        await ResolvePatientAsync(byId: true, typed);
+    }
+
+    private async Task ResolvePatientAsync(bool byId, string value)
+    {
+        int generation = ++_patientLookupGeneration;
+        if (string.IsNullOrWhiteSpace(_preferences.PatientDbfPath))
+        {
+            if (!byId)
+                SetStatus("尚未設定 HIS 路徑", "可以在設定中指定 PD011M1.dbf；目前只使用測試號碼。", InfoBarSeverity.Warning);
+            else
+                SetStatus("尚未設定 HIS 路徑", "身分證查詢需要先設定 PD011M1.dbf。", InfoBarSeverity.Warning);
+            UpdateButtons();
+            return;
+        }
+
+        _patientLookupBusy = true;
+        UpdateButtons();
+        try
+        {
+            var path = _preferences.PatientDbfPath;
+            var patient = byId
+                ? await _patientLookup.ByIdAsync(path, value)
+                : await _patientLookup.ByNumberAsync(path, value);
+            if (generation != _patientLookupGeneration) return;
+
+            if (patient is null)
+            {
+                _resolvedPatientNumber = null;
+                _resolvedPatientId = null;
+                _updatingPatientFields = true;
+                PatientNameBox.Text = "";
+                if (!byId) PatientIdBox.Text = "";
+                _updatingPatientFields = false;
+                SetStatus("查無患者", "PD011M1 沒有符合的有效紀錄；不允許在未確認身分時拍照。", InfoBarSeverity.Warning);
+                return;
+            }
+
+            _updatingPatientFields = true;
+            PatientNumberBox.Text = patient.Number;
+            PatientIdBox.Text = patient.DisplayId;
+            PatientNameBox.Text = patient.Name;
+            _updatingPatientFields = false;
+            _resolvedPatientNumber = patient.Number;
+            _resolvedPatientId = patient.DisplayId.ToUpperInvariant();
+            SetStatus("患者查詢成功", "已從唯讀 PD011M1 帶入病歷號、身分證號及姓名。", InfoBarSeverity.Success);
+            await RefreshBatchThumbnailAsync();
+        }
+        catch (Exception ex)
+        {
+            if (generation != _patientLookupGeneration) return;
+            _resolvedPatientNumber = null;
+            _resolvedPatientId = null;
+            _updatingPatientFields = true;
+            PatientNameBox.Text = "";
+            if (!byId) PatientIdBox.Text = "";
+            _updatingPatientFields = false;
+            SetStatus("無法查詢患者", ex is InvalidDataException ? ex.Message :
+                "DBF 暫時無法讀取，請檢查路徑或稍後再試。", InfoBarSeverity.Error);
+        }
+        finally
+        {
+            if (generation == _patientLookupGeneration)
+            {
+                _patientLookupBusy = false;
+                UpdateButtons();
+                UpdateModeDisplay();
+            }
+        }
+    }
+
+    private async void BrowsePatientDbfButton_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var picker = new FileOpenPicker();
+            picker.FileTypeFilter.Add(".dbf");
+            if (MainWindow.Active is null) throw new InvalidOperationException("找不到視窗。");
+            InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(MainWindow.Active));
+            var file = await picker.PickSingleFileAsync();
+            if (file is not null) PatientDbfPathBox.Text = file.Path;
+        }
+        catch (Exception)
+        {
+            SetStatus("選取 DBF 失敗", "無法使用檔案瀏覽器，請改由設定手動輸入完整路徑。", InfoBarSeverity.Error);
+        }
+    }
+
+    private void ApplyPatientDbfButton_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            // The path is only remembered here. We intentionally do not open the
+            // live clinical DBF until the user performs a specific lookup.
+            string path = PatientDbfPathPolicy.Normalize(PatientDbfPathBox.Text);
+            _preferences.PatientDbfPath = path;
+            _patientLookup.Invalidate();
+            _patientLookupGeneration++;
+            _resolvedPatientNumber = null;
+            _resolvedPatientId = null;
+            _updatingPatientFields = true;
+            PatientIdBox.Text = "";
+            PatientNameBox.Text = "";
+            _updatingPatientFields = false;
+            PatientDbfPathBox.Text = path;
+            SavePreferences();
+            UpdateButtons();
+            SetStatus("HIS 路徑已記憶", "下次啟動會自動帶入 PD011M1 路徑；患者查詢採唯讀方式。", InfoBarSeverity.Success);
+        }
+        catch (ArgumentException ex) { SetStatus("DBF 路徑無效", ex.Message, InfoBarSeverity.Error); }
     }
 
     private async void ExitButton_Click(object sender, RoutedEventArgs e)
@@ -278,6 +437,13 @@ public sealed partial class MainPage : Page
         {
             FullScreenButton_Click(this, new RoutedEventArgs());
             e.Handled = true;
+            return;
+        }
+        if (PhotoOverlay.Visibility == Visibility.Visible &&
+            (e.Key == VirtualKey.Left || e.Key == VirtualKey.Right))
+        {
+            e.Handled = true;
+            _ = NavigateGalleryAsync(e.Key == VirtualKey.Right ? 1 : -1);
             return;
         }
 
@@ -598,6 +764,12 @@ public sealed partial class MainPage : Page
         PhotoTitle.Text = $"{CaptureIdentity.Require(PatientNumberBox.Text)}｜第 {index + 1} / {photos.Count} 張｜{Path.GetFileName(path)}";
         PrevPhotoButton.IsEnabled = index > 0;
         NextPhotoButton.IsEnabled = index < photos.Count - 1;
+    }
+
+    private async Task NavigateGalleryAsync(int step)
+    {
+        try { await ShowPhotoAtAsync(_activePhotoIndex + step); }
+        catch { SetStatus("照片檢視失敗", "無法載入上一張或下一張照片。", InfoBarSeverity.Error); }
     }
 
     private async void ThumbnailButton_Click(object sender, RoutedEventArgs e)

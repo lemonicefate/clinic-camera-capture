@@ -24,16 +24,27 @@
                     <FontIcon Glyph="&#xE713;" FontSize="25"/>
                 </Button>
                 <StackPanel Grid.Column="1" Orientation="Horizontal"
-                            HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="10">
-                    <TextBlock Text="病歷號" FontSize="17" VerticalAlignment="Center" Foreground="#FFE4EDF3"/>
-                    <TextBox x:Name="PatientNumberBox" Width="220" Height="47"
-                             FontFamily="Consolas" FontSize="23"
-                             MaxLength="6" PlaceholderText="病歷號（自動補零）"
+                            HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8">
+                    <TextBlock Text="病歷號" FontSize="15" VerticalAlignment="Center"/>
+                    <TextBox x:Name="PatientNumberBox" Width="130" Height="45"
+                             FontFamily="Consolas" FontSize="21"
+                             MaxLength="6" PlaceholderText="六位病歷號"
                              TextChanged="PatientNumberBox_TextChanged"
                              LostFocus="PatientNumberBox_LostFocus"
                              HorizontalTextAlignment="Center"/>
+                    <TextBlock Text="身分證號" FontSize="15" VerticalAlignment="Center"/>
+                    <TextBox x:Name="PatientIdBox" Width="190" Height="45"
+                             FontFamily="Consolas" FontSize="18"
+                             MaxLength="24" PlaceholderText="輸入身分證查病歷"
+                             TextChanged="PatientIdBox_TextChanged"
+                             LostFocus="PatientIdBox_LostFocus"/>
+                    <TextBlock Text="姓名" FontSize="15" VerticalAlignment="Center"/>
+                    <TextBox x:Name="PatientNameBox" Width="146" Height="45" FontSize="18"
+                             IsReadOnly="True" IsTabStop="False"
+                             PlaceholderText="尚未查詢"/>
                     <TextBlock x:Name="PatientHintText" VerticalAlignment="Center" Foreground="#FFEFC78B"
-                               Text="請先輸入六位數病歷號"/>
+                               MaxWidth="170" TextWrapping="Wrap" FontSize="12"
+                               Text="設定 PD011M1 查詢資料"/>
                 </StackPanel>
                 <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Spacing="10">
                     <TextBlock x:Name="RecordingIndicator" Text="● REC" Foreground="#FFFF5252"
@@ -82,7 +93,7 @@
                  VerticalAlignment="Bottom" HorizontalAlignment="Left"
                  MaxWidth="740" Margin="20,0,128,22"
                  Severity="Informational" IsClosable="True"
-                 Title="準備中" Message="Windows 原生相機 MVP，不連接 HIS"/>
+                 Title="準備中" Message="原生相機 MVP；可唯讀查詢 PD011M1，不寫入 HIS 病歷索引"/>
 
         <!-- The engineering controls live in a settings drawer, not on the camera canvas. -->
         <Grid x:Name="SettingsLayer" Visibility="Collapsed" Background="#A9000000">
@@ -95,7 +106,7 @@
                             <TextBlock Text="相機設定" FontSize="27" FontWeight="SemiBold"/>
                             <Button Grid.Column="1" Content="關閉 ×" Click="CloseSettingsButton_Click"/>
                         </Grid>
-                        <TextBlock Text="此版本僅寫入獨立的本機測試目錄，不連接 WM003。"
+                        <TextBlock Text="患者基本資料僅唯讀 PD011M1，照片依自訂路徑存檔；不會寫入 HIS 的 CH013M1 或 CDX。"
                                    TextWrapping="Wrap" Foreground="#F0CC9A"/>
                         <TextBlock Text="影像裝置" FontWeight="SemiBold"/>
                         <ComboBox x:Name="CameraPicker" Width="390" HorizontalAlignment="Left"
@@ -108,6 +119,15 @@
                         </StackPanel>
                         <TextBlock x:Name="DeviceDetailText" Text="尚未連線" TextWrapping="Wrap"
                                    Foreground="#B6DCE4" FontSize="12"/>
+                        <TextBlock Text="HIS 患者資料（唯讀）" FontWeight="SemiBold"/>
+                        <TextBox x:Name="PatientDbfPathBox" Width="390" HorizontalAlignment="Left"
+                                 PlaceholderText="選擇 PD011M1.dbf"/>
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Button Content="瀏覽 PD011M1…" Click="BrowsePatientDbfButton_Click"/>
+                            <Button Content="記憶 DBF 路徑" Click="ApplyPatientDbfButton_Click"/>
+                        </StackPanel>
+                        <TextBlock Text="僅唯讀 PD011M1 的 NUM / ID / NAME，查詢索引存在記憶體，不讀寫 CDX；本機設定只記錄 DBF 路徑，不保存病患個資。"
+                                   Foreground="#ADCDD9" TextWrapping="Wrap"/>
                         <TextBlock Text="操作模式" FontWeight="SemiBold"/>
                         <ComboBox x:Name="ModePicker" Width="390" SelectedIndex="0"
                                   SelectionChanged="ModePicker_SelectionChanged">
