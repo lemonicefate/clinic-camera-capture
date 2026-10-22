@@ -1,33 +1,38 @@
-# Clinic Camera Capture — v0.3 validation (2026-10-22)
+# MVP v0.4 diagnostics and validation — 2026-10-22
 
-## Confirmed / Automated
-- Development workstation SDK: .NET 10; WinUI 3, C# + XAML.
-- WinUI camera-style page and C# handlers compiled on development PC with 0 errors and 0 warnings.
-- Process launched on development PC and was observed running, responding, and holding a native app window.
-- Synthetic 80x48 RGBA/BGRA8 PNG/BMP round-trip pixel integrity passes; BMP BI_RGB is uncompressed, checksum verified, JPEG rejected.
-- Failure-injection output folder test: failed save does not overwrite previous photo.
-- New six-digit local reference tests: fake 000123 preserves leading zeros, nonnumeric/path traversal rejected, successive saves generate collision-safe distinct files.
-- No WM003 source files or HIS records were modified by these tests.
+## Method (mattpocock/skills: diagnosing-bugs)
 
-## User-Reported Earlier Hardware Success (v0.1)
-- On clinic imaging workstation, Windows 10 build 19045, webcam and capture devices are enumerated:
-  - USB2.0 PC CAMERA (VID_18EC&PID_5850)
-  - HD Camera (VID_1BCF&PID_2087)
-- User verified original v0.1 Windows MediaCapture preview and photo capture works, at 640x480. This does not validate v0.3 video recording.
+1. **Reproduction feedback loop:** existing synthetic camera-store test, extended with a failing assertion: `CaptureIdentity.IsValid("90")` returned false. Initial run was **FAIL: accept short numeric patient reference**.
+2. **Minimization:** 1 input (`90`) and 1 assertion demonstrated that the previous exact-six-digit validator prevents the user's desired left-padding. Existing tests did not exercise the requirement.
+3. **Falsifiable findings:** `CaptureIdentity` imposed exact six digits; `CaptureStore` generated timestamp+GUID names, not sequence; `MainPage` retained only `_lastPhotoPath`; key capture was a bubbling `CameraRoot.KeyDown` handler that could be bypassed by focus handling.
+4. **Fix:** normalize 1–6 ASCII digits to 6, assign 01–99 per folder and patient across formats, keep per-patient run-only `PhotoBatch`, use WinUI `KeyboardAccelerator` instead of relying on bubbling `KeyDown` to invoke photo capture. Add close button and validated user-selected local output folder.
+5. **Regression:** all synthetic/format/numbering/path/batch tests pass. UI is compiled, not fully automated at real camera level.
 
-## v0.3 Changes
-- Full-screen presentation on actual monitor size; preserves source 4:3 with Stretch=Uniform (black side margins on 16:9).
-- Six-digit patient-reference entry; no implicit HIS lookup or indexing, used only for a local test filename.
-- Single right-hand shutter/record button with mode selected in left settings drawer.
-- F8/F9/F10/F12 configurable **foreground** still photo shortcut, default F9.
-- Local JSON settings (camera ID, default mode, format, hotkey, full screen) without patient reference.
-- Thumbnail and full-canvas view of most recent successfully saved still photograph.
-- MP4 record control wired via MediaCapture, with microphone disabled.
+## Regressions that have actually been run
 
-## Still NOT Verified / NOT Clinical Release
-- No physical camera on development PC; all v0.3 hardware behavior pending clinic field test.
-- MP4 StartRecordToStorageFileAsync on VID_18EC&PID_5850, preview+record simultaneity, MP4 playback, reconnect, data-loss and storage access tests pending.
-- Actual Windows 10 v0.3 UI interaction, fullscreen display and keyboard shortcuts pending clinic PC field test.
-- No video preview or player inside app, only photo thumbnail; no global hotkey.
-- No PD011M1/CH013M1 access or HIS images integration; no real clinical images may be used in this isolated MVP.
-- No production HIPAA / local personal-data confidentiality controls are established.
+- `dotnet run --project tests/CaptureStore.Smoke/CaptureStore.Smoke.csproj -c Debug`
+- PNG/BMP RGB round-trip matches source and disk SHA-256 verified.
+- JPEG is refused, BMP BI_RGB uncompressed header validated.
+- Simulated write failure does not overwrite an existing image.
+- Enter `90` or `000090`: standardized to six digits; first PNG is `000090_01.png`, next BMP is `000090_02.bmp`.
+- Cross-format occupied number `000090_03.jpg` causes next PNG to use `000090_04.png`.
+- All 01–99 taken means a new attempt fails clearly without overwriting `_01`.
+- In-run `PhotoBatch` tracks two photographs for `000090` and does not mix in `000091`.
+- Output folder validation allows safe local paths and rejects direct `D:\WM003\IMAGES`.
+
+## Build and execution
+
+- WinUI C# / XAML Debug build on development PC completed with **0 warnings, 0 errors**.
+- Direct launching the framework-dependent Debug EXE failed due to unregistered Windows App SDK COM class (Event Viewer: `0x80040154` in `DeploymentInitializeOptions` auto-initializer); **this is a development host runtime dependency**, not evidence that the photo code crashed. Do not use the raw Debug EXE for clinic distribution.
+- The self-contained Windows x64 Release publish **was launched on the development PC and remained responsive with a real window handle**.
+- An automated F9 foreground-input probe found no reliable WinUI UI Automation feedback via the outer window; **keyboard shortcut trigger is not independently verified**. Only the code binding and successful application startup are verified.
+- The original user-reported v0.1 preview+photo worked on Windows 10 with USB2.0 PC CAMERA, 640×480; this remains the only confirmed physical-card evidence.
+- New v0.4 source will be packaged as Win10 self-contained x64 test build separately. Deployment is not a clinical release.
+
+## UI and camera **not yet conclusively tested**
+
+- The actual **shortcut problem** happens on the clinic capture workstation, not reproducibly on the no-physical-camera development PC. Framework-based `KeyboardAccelerator` replaces the weak root `KeyDown` binding, but exact on-device F8/F9/F10/F12 use with focused patient field **needs field verification**. Do not describe this as fully proven fixed until tested.
+- WinUI FolderPicker, path selection UI, gallery prev/next buttons, and top-right close while full-screen need physical interactive field verification.
+- USB capture-card MP4 recording, abrupt disconnection, backup, permissions, disk exhaustion and shared drive behavior remain untested.
+- The MVP intentionally doesn't open HIS DBF or write `CH013M1`. Patient IDs can be identifying information; use **synthetic IDs only**.
+- Per-patient numbering is **per selected storage directory**, up to 99; the program refuses after full and does not delete or overwrite.

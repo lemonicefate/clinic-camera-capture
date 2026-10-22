@@ -29,6 +29,10 @@ public sealed class CaptureStore
             throw new ArgumentException("Only lossless PNG and uncompressed BMP are supported.", nameof(extension));
         if (patientNumber is not null) CaptureIdentity.Require(patientNumber);
 
+        // Preserve the original extension only; normalized patient references are
+        // never allowed to become a path segment.
+        var normalizedPatient = patientNumber is null ? null : CaptureIdentity.Require(patientNumber);
+
         // Converting to BGRA8 is a pixel layout conversion; never use JPEG on this path.
         using var pixels = SoftwareBitmap.Convert(original, BitmapPixelFormat.Bgra8, BitmapAlphaMode.Ignore);
         using var stream = new InMemoryRandomAccessStream();
@@ -76,11 +80,46 @@ public sealed class CaptureStore
             if (!encoded.AsSpan().SequenceEqual(onDisk))
                 throw new IOException("File verification failed after write.");
 
-            // UUID prevents collision even under simultaneous captures; File.Move never overwrites.
-            saved = Path.Combine(OutputFolder, patientNumber is null
-                ? "TEST_" + DateTime.Now.ToString("yyyyMMdd_HHmmss_fff") + "_" + Guid.NewGuid().ToString("N")[..8] + "." + extension
-                : CaptureIdentity.Filename(patientNumber, extension));
-            File.Move(tmp, saved);
+            // Reuse the earliest vacant 01..99 slot, skipping names occupied by
+            // ANY photo extension. Never overwrite another image on disk.
+            if (normalizedPatient is null)
+            {
+                saved = Path.Combine(OutputFolder, "TEST_" + DateTime.Now.ToString("yyyyMMdd_HHmmss_fff")
+                    + "_" + Guid.NewGuid().ToString("N")[..8] + "." + extension);
+                File.Move(tmp, saved);
+            }
+            else
+            {
+                // A named mutex protects the cross-extension sequence across
+                // concurrent instances on this workstation / in this directory.
+                var lockKey = Convert.ToHexString(SHA256.HashData(
+                    System.Text.Encoding.UTF8.GetBytes(Path.GetFullPath(OutputFolder).ToUpperInvariant() + "|" + normalizedPatient)));
+                using var gate = new Mutex(false, "Local\\ClinicCameraCapture_" + lockKey);
+                bool acquired = false;
+                try
+                {
+                    try { acquired = gate.WaitOne(TimeSpan.FromSeconds(10)); }
+                    catch (AbandonedMutexException) { acquired = true; }
+                    if (!acquired) throw new IOException("無法鎖定照片流水號，請稍後重試。");
+                    for (int no = 1; no <= 99; no++)
+                    {
+                        var prefix = $"{normalizedPatient}_{no:00}.";
+                        bool inUse = Directory.EnumerateFiles(OutputFolder, normalizedPatient + "_*")
+                            .Any(path => Path.GetFileName(path).StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
+                        if (inUse) continue;
+                        var candidate = Path.Combine(OutputFolder, CaptureIdentity.PhotoName(normalizedPatient, no, extension));
+                        File.Move(tmp, candidate); // Fails instead of overwriting.
+                        saved = candidate;
+                        break;
+                    }
+                    if (saved is null)
+                        throw new IOException($"病歷號 {normalizedPatient} 已使用全部 01–99 照片編號，未覆寫任何影像。");
+                }
+                finally
+                {
+                    if (acquired) gate.ReleaseMutex();
+                }
+            }
             var sha = Convert.ToHexString(SHA256.HashData(onDisk));
             return new SavedCapture(saved, onDisk.Length, sha, (uint)pixels.PixelWidth, (uint)pixels.PixelHeight);
         }

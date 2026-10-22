@@ -28,8 +28,9 @@
                     <TextBlock Text="病歷號" FontSize="17" VerticalAlignment="Center" Foreground="#FFE4EDF3"/>
                     <TextBox x:Name="PatientNumberBox" Width="220" Height="47"
                              FontFamily="Consolas" FontSize="23"
-                             MaxLength="6" PlaceholderText="六位數病歷號"
+                             MaxLength="6" PlaceholderText="病歷號（自動補零）"
                              TextChanged="PatientNumberBox_TextChanged"
+                             LostFocus="PatientNumberBox_LostFocus"
                              HorizontalTextAlignment="Center"/>
                     <TextBlock x:Name="PatientHintText" VerticalAlignment="Center" Foreground="#FFEFC78B"
                                Text="請先輸入六位數病歷號"/>
@@ -46,8 +47,9 @@
         <!-- A single action button on the right, mode is changed in settings. -->
         <Border Background="#B012171E" Width="112" HorizontalAlignment="Right">
             <Grid RowDefinitions="Auto,*,Auto" Padding="8,90,8,18">
-                <TextBlock Grid.Row="0" Text="MVP v0.3" Foreground="#99EDF1F5"
-                           HorizontalAlignment="Center" FontSize="12"/>
+                <Button Grid.Row="0" Content="× 關閉" Click="ExitButton_Click"
+                        HorizontalAlignment="Center" Foreground="White"
+                        Background="#B2473336" ToolTipService.ToolTip="結束應用程式"/>
                 <StackPanel Grid.Row="1" VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="12">
                     <Button x:Name="ShutterButton" Click="ShutterButton_Click"
                             Content="●" FontSize="38" Foreground="#20232A"
@@ -62,7 +64,7 @@
                             Background="#25303C" BorderBrush="#8BB9D0"
                             BorderThickness="1" CornerRadius="7"
                             IsEnabled="False" Click="ThumbnailButton_Click"
-                            ToolTipService.ToolTip="放大檢視上一張照片">
+                            ToolTipService.ToolTip="瀏覽本次同病歷號的所有照片">
                         <Grid>
                             <Image x:Name="ThumbnailImage" Stretch="UniformToFill"/>
                             <TextBlock x:Name="ThumbnailPlaceholder" Text="照片"
@@ -70,7 +72,7 @@
                                        HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Grid>
                     </Button>
-                    <TextBlock Text="檢視照片" Foreground="#B0D6E0E8" FontSize="12"
+                    <TextBlock Text="本次照片" Foreground="#B0D6E0E8" FontSize="12"
                                HorizontalAlignment="Center"/>
                 </StackPanel>
             </Grid>
@@ -118,6 +120,15 @@
                             <ComboBoxItem Content="PNG（無損壓縮）" Tag="png"/>
                             <ComboBoxItem Content="BMP（未壓縮）" Tag="bmp"/>
                         </ComboBox>
+                        <TextBlock Text="照片及影片儲存資料夾" FontWeight="SemiBold"/>
+                        <TextBox x:Name="OutputFolderBox" Width="390" HorizontalAlignment="Left"
+                                 PlaceholderText="本機資料夾完整路徑" TextWrapping="NoWrap"/>
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Button Content="瀏覽資料夾…" Click="BrowseFolderButton_Click"/>
+                            <Button Content="套用儲存路徑" Click="ApplyOutputFolderButton_Click"/>
+                        </StackPanel>
+                        <TextBlock Text="測試版限制：不得指定 HIS 目錄或網路共享，且只使用非病患測試影像。"
+                                   Foreground="#F0CC9A" TextWrapping="Wrap"/>
                         <TextBlock Text="拍照快捷鍵（程式在前景時）" FontWeight="SemiBold"/>
                         <ComboBox x:Name="ShortcutPicker" Width="390" SelectedIndex="1"
                                   SelectionChanged="ShortcutPicker_SelectionChanged">
@@ -149,15 +160,18 @@
             </Border>
         </Grid>
 
-        <!-- Last still photo in a dark full-canvas lightbox. -->
-        <Grid x:Name="PhotoOverlay" Visibility="Collapsed" Background="#FF07090C"
-              Tapped="PhotoOverlay_Tapped">
+        <!-- In-run gallery, filtered to the currently entered patient reference. -->
+        <Grid x:Name="PhotoOverlay" Visibility="Collapsed" Background="#FF07090C">
             <Image x:Name="FullPhotoImage" Stretch="Uniform" Margin="16,72,16,16"/>
             <Border Background="#D0202730" Height="65" VerticalAlignment="Top">
-                <Grid ColumnDefinitions="*,Auto" Padding="20,10">
-                    <TextBlock x:Name="PhotoTitle" Text="最近一張照片" FontSize="17"
+                <Grid ColumnDefinitions="*,Auto,Auto,Auto" Padding="20,10" ColumnSpacing="8">
+                    <TextBlock x:Name="PhotoTitle" Text="本次照片" FontSize="17"
                                Foreground="#FFF4F6F9" VerticalAlignment="Center"/>
-                    <Button Grid.Column="1" Content="返回相機  Esc" Click="ClosePhotoButton_Click"/>
+                    <Button x:Name="PrevPhotoButton" Grid.Column="1" Content="← 上一張"
+                            Click="PrevPhotoButton_Click"/>
+                    <Button x:Name="NextPhotoButton" Grid.Column="2" Content="下一張 →"
+                            Click="NextPhotoButton_Click"/>
+                    <Button Grid.Column="3" Content="返回相機  Esc" Click="ClosePhotoButton_Click"/>
                 </Grid>
             </Border>
         </Grid>

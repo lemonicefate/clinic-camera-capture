@@ -13,7 +13,9 @@ using Windows.Media.Capture.Frames;
 using Windows.Media.Core;
 using Windows.Media.MediaProperties;
 using Windows.Storage;
+using Windows.Storage.Pickers;
 using Windows.System;
+using WinRT.Interop;
 using Windows.UI;
 
 namespace ClinicCameraCapture;
@@ -28,8 +30,10 @@ public sealed partial class MainPage : Page
     private sealed record FormatChoice(MediaFrameFormat Format, string Label);
 
     private readonly SemaphoreSlim _cameraGate = new(1, 1);
-    private readonly CaptureStore _store = new();
     private CameraPreferences _preferences = CameraPreferences.Load();
+    private CaptureStore CurrentStore => new(_preferences.OutputFolder);
+    private readonly PhotoBatch _batch = new();
+    private readonly KeyboardAccelerator _photoAccelerator = new();
     private MediaCapture? _camera;
     private MediaFrameSource? _frameSource;
     private List<FormatChoice> _supportedFormats = new();
@@ -37,7 +41,7 @@ public sealed partial class MainPage : Page
     private bool _busy;
     private bool _recording;
     private string? _recordingPath;
-    private string? _lastPhotoPath;
+    private int _activePhotoIndex;
 
     public MainPage()
     {
@@ -46,6 +50,10 @@ public sealed partial class MainPage : Page
         SelectTag(FormatPicker, _preferences.Format);
         SelectTag(ShortcutPicker, _preferences.Shortcut);
         FullScreenCheckBox.IsChecked = _preferences.FullScreen;
+        OutputFolderBox.Text = _preferences.OutputFolder;
+        _photoAccelerator.Key = Enum.Parse<VirtualKey>(_preferences.Shortcut);
+        _photoAccelerator.Invoked += PhotoAccelerator_Invoked;
+        CameraRoot.KeyboardAccelerators.Add(_photoAccelerator);
         _loadingUi = false;
         CameraRoot.AddHandler(UIElement.KeyDownEvent, new KeyEventHandler(HandleKeyboard), true);
         UpdateButtons();
@@ -102,8 +110,8 @@ public sealed partial class MainPage : Page
         ApplyFormatButton.IsEnabled = !_busy && !_recording && _frameSource is not null
             && FrameFormatPicker.SelectedItem is FormatChoice;
         CopyFormatsButton.IsEnabled = !_busy && _supportedFormats.Count > 0;
-        ThumbnailButton.IsEnabled = _lastPhotoPath is not null;
-        PatientHintText.Text = HasValidPatient ? "✓" : "請輸入六位數病歷號";
+        ThumbnailButton.IsEnabled = _batch.For(PatientNumberBox.Text).Count > 0;
+        PatientHintText.Text = HasValidPatient ? "✓ " + CaptureIdentity.Require(PatientNumberBox.Text) : "輸入 1–6 位數字";
         PatientHintText.Foreground = new SolidColorBrush(HasValidPatient ? Colors.LightGreen : Colors.Wheat);
     }
 
@@ -138,7 +146,61 @@ public sealed partial class MainPage : Page
             ? "拍照快捷鍵：" + _preferences.Shortcut : "錄影：按鈕開始／停止");
     }
 
-    private void PatientNumberBox_TextChanged(object sender, TextChangedEventArgs e) => UpdateButtons();
+    private async void PatientNumberBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        UpdateButtons();
+        try { await RefreshBatchThumbnailAsync(); }
+        catch (Exception ex) { SetStatus("讀取縮圖失敗", ex.Message, InfoBarSeverity.Warning); }
+    }
+
+    private void PatientNumberBox_LostFocus(object sender, RoutedEventArgs e)
+    {
+        if (HasValidPatient)
+            PatientNumberBox.Text = CaptureIdentity.Require(PatientNumberBox.Text);
+    }
+
+    private async void ExitButton_Click(object sender, RoutedEventArgs e)
+    {
+        await StopCameraAsync(false);
+        MainWindow.Active?.Close();
+    }
+
+    private async void BrowseFolderButton_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var picker = new FolderPicker();
+            picker.FileTypeFilter.Add("*");
+            if (MainWindow.Active is null) throw new InvalidOperationException("找不到程式視窗。");
+            InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(MainWindow.Active));
+            var folder = await picker.PickSingleFolderAsync();
+            if (folder is not null) OutputFolderBox.Text = folder.Path;
+        }
+        catch (Exception ex) { SetStatus("選擇資料夾失敗", ex.Message, InfoBarSeverity.Error); }
+    }
+
+    private void ApplyOutputFolderButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_recording || _busy)
+        {
+            SetStatus("目前不能變更路徑", "請先結束錄影或拍攝。", InfoBarSeverity.Warning);
+            return;
+        }
+        try
+        {
+            var verified = OutputFolderPolicy.Normalize(OutputFolderBox.Text);
+            Directory.CreateDirectory(verified);
+            // Probe access in the intended folder, never in the HIS directory.
+            var probe = Path.Combine(verified, "." + Guid.NewGuid().ToString("N") + ".tmp");
+            using (File.Create(probe)) { }
+            File.Delete(probe);
+            _preferences.OutputFolder = verified;
+            OutputFolderBox.Text = verified;
+            SavePreferences();
+            SetStatus("儲存路徑已更新", verified, InfoBarSeverity.Success);
+        }
+        catch (Exception ex) { SetStatus("無法使用這個儲存路徑", ex.Message, InfoBarSeverity.Error); }
+    }
 
     private void SettingsButton_Click(object sender, RoutedEventArgs e) =>
         SettingsLayer.Visibility = Visibility.Visible;
@@ -175,6 +237,7 @@ public sealed partial class MainPage : Page
     {
         if (_loadingUi) return;
         _preferences.Shortcut = SelectedTag(ShortcutPicker, "F9");
+        _photoAccelerator.Key = Enum.Parse<VirtualKey>(_preferences.Shortcut);
         SavePreferences();
         UpdateModeDisplay();
     }
@@ -221,11 +284,26 @@ public sealed partial class MainPage : Page
             || _recording || _busy || !HasValidPatient || _camera is null)
             return;
 
-        if (e.Key.ToString().Equals(_preferences.Shortcut, StringComparison.OrdinalIgnoreCase))
+        // Photo shortcut is handled by a WinUI KeyboardAccelerator, which
+        // participates in focused TextBox / control accelerator routing.
+    }
+
+    private void PhotoAccelerator_Invoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
+    {
+        args.Handled = true;
+        if (SettingsLayer.Visibility == Visibility.Visible || PhotoOverlay.Visibility == Visibility.Visible
+            || _recording || _busy) return;
+        if (!HasValidPatient)
         {
-            e.Handled = true;
-            _ = TakePhotoAsync(); // Shortcut always takes a photo, even when video mode is selected.
+            SetStatus("快捷鍵已觸發", "請先輸入 1 至 6 位數字病歷號。", InfoBarSeverity.Warning);
+            return;
         }
+        if (_camera is null)
+        {
+            SetStatus("快捷鍵已觸發", "相機尚未連線；請檢查設定。", InfoBarSeverity.Warning);
+            return;
+        }
+        _ = TakePhotoAsync();
     }
 
     private async void RefreshButton_Click(object sender, RoutedEventArgs e) => await RefreshCamerasAsync();
@@ -458,11 +536,11 @@ public sealed partial class MainPage : Page
                 var photo = await session.CaptureAsync();
                 using var bitmap = photo.Frame.SoftwareBitmap
                     ?? throw new InvalidOperationException("無法取得未壓縮影像像素。");
-                var saved = await _store.SaveAsync(bitmap, _preferences.Format, patientNumber);
-                _lastPhotoPath = saved.FilePath;
+                var saved = await CurrentStore.SaveAsync(bitmap, _preferences.Format, patientNumber);
+                _batch.Add(patientNumber, saved.FilePath);
                 try
                 {
-                    await RefreshThumbnailAsync(saved.FilePath);
+                    await RefreshBatchThumbnailAsync();
                     SetStatus("照片已通過驗證",
                         $"{saved.Width}×{saved.Height}、{saved.Bytes:N0} bytes。檔案僅在本機測試目錄，尚未登錄 HIS。",
                         InfoBarSeverity.Success);
@@ -480,25 +558,71 @@ public sealed partial class MainPage : Page
         finally { _busy = false; UpdateButtons(); UpdateModeDisplay(); _cameraGate.Release(); }
     }
 
-    private async Task RefreshThumbnailAsync(string path)
+    private static async Task<BitmapImage> LoadPhotoImageAsync(string path)
     {
         var file = await StorageFile.GetFileFromPathAsync(path);
         using var stream = await file.OpenReadAsync();
         var bitmap = new BitmapImage();
         await bitmap.SetSourceAsync(stream);
-        ThumbnailImage.Source = bitmap;
-        FullPhotoImage.Source = bitmap;
-        ThumbnailPlaceholder.Visibility = Visibility.Collapsed;
-        PhotoTitle.Text = "最近一張照片";
+        return bitmap;
     }
 
-    private void ThumbnailButton_Click(object sender, RoutedEventArgs e)
+    private async Task RefreshBatchThumbnailAsync()
     {
-        if (_lastPhotoPath is null) return;
-        PhotoOverlay.Visibility = Visibility.Visible;
+        var photos = _batch.For(PatientNumberBox.Text);
+        ThumbnailButton.IsEnabled = photos.Count > 0;
+        if (photos.Count == 0)
+        {
+            ThumbnailImage.Source = null;
+            ThumbnailPlaceholder.Visibility = Visibility.Visible;
+            return;
+        }
+        string refAtStart = CaptureIdentity.Require(PatientNumberBox.Text);
+        var image = await LoadPhotoImageAsync(photos[^1]);
+        if (CaptureIdentity.IsValid(PatientNumberBox.Text) &&
+            CaptureIdentity.Require(PatientNumberBox.Text) == refAtStart)
+        {
+            ThumbnailImage.Source = image;
+            ThumbnailPlaceholder.Visibility = Visibility.Collapsed;
+        }
     }
 
-    private void PhotoOverlay_Tapped(object sender, TappedRoutedEventArgs e) => ClosePhoto();
+    private async Task ShowPhotoAtAsync(int index)
+    {
+        var photos = _batch.For(PatientNumberBox.Text);
+        if (index < 0 || index >= photos.Count) return;
+        var path = photos[index];
+        FullPhotoImage.Source = await LoadPhotoImageAsync(path);
+        _activePhotoIndex = index;
+        PhotoTitle.Text = $"{CaptureIdentity.Require(PatientNumberBox.Text)}｜第 {index + 1} / {photos.Count} 張｜{Path.GetFileName(path)}";
+        PrevPhotoButton.IsEnabled = index > 0;
+        NextPhotoButton.IsEnabled = index < photos.Count - 1;
+    }
+
+    private async void ThumbnailButton_Click(object sender, RoutedEventArgs e)
+    {
+        var photos = _batch.For(PatientNumberBox.Text);
+        if (photos.Count == 0) return;
+        try
+        {
+            await ShowPhotoAtAsync(photos.Count - 1);
+            PhotoOverlay.Visibility = Visibility.Visible;
+        }
+        catch (Exception ex) { SetStatus("無法開啟照片", ex.Message, InfoBarSeverity.Error); }
+    }
+
+    private async void PrevPhotoButton_Click(object sender, RoutedEventArgs e)
+    {
+        try { await ShowPhotoAtAsync(_activePhotoIndex - 1); }
+        catch (Exception ex) { SetStatus("無法開啟上一張", ex.Message, InfoBarSeverity.Error); }
+    }
+
+    private async void NextPhotoButton_Click(object sender, RoutedEventArgs e)
+    {
+        try { await ShowPhotoAtAsync(_activePhotoIndex + 1); }
+        catch (Exception ex) { SetStatus("無法開啟下一張", ex.Message, InfoBarSeverity.Error); }
+    }
+
     private void ClosePhotoButton_Click(object sender, RoutedEventArgs e) => ClosePhoto();
     private void ClosePhoto() => PhotoOverlay.Visibility = Visibility.Collapsed;
 
@@ -514,9 +638,9 @@ public sealed partial class MainPage : Page
             {
                 if (_camera is null) throw new InvalidOperationException("請先連線攝影機。");
                 var patientNumber = CaptureIdentity.Require(PatientNumberBox.Text);
-                Directory.CreateDirectory(CaptureStore.Folder);
-                var folder = await StorageFolder.GetFolderFromPathAsync(CaptureStore.Folder);
-                var filename = CaptureIdentity.Filename(patientNumber, "mp4");
+                Directory.CreateDirectory(_preferences.OutputFolder);
+                var folder = await StorageFolder.GetFolderFromPathAsync(_preferences.OutputFolder);
+                var filename = CaptureIdentity.VideoName(patientNumber);
                 var file = await folder.CreateFileAsync(filename, CreationCollisionOption.FailIfExists);
                 _recordingPath = file.Path;
                 try
@@ -565,8 +689,8 @@ public sealed partial class MainPage : Page
     {
         try
         {
-            Directory.CreateDirectory(CaptureStore.Folder);
-            Process.Start(new ProcessStartInfo("explorer.exe", "\"" + CaptureStore.Folder + "\"")
+            Directory.CreateDirectory(_preferences.OutputFolder);
+            Process.Start(new ProcessStartInfo("explorer.exe", "\"" + _preferences.OutputFolder + "\"")
             {
                 UseShellExecute = true
             });

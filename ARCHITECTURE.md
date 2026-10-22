@@ -1,6 +1,6 @@
 # Clinic Camera Capture — ARCHITECTURE.md
 
-**範圍：** Windows 原生相機 UI + 本機隔離測試存檔（MVP v0.3）。
+**範圍：** Windows 原生相機 UI + 本機隔離測試存檔（MVP v0.4）。
 
 詳見 [SPEC.md](SPEC.md) 及 [DESIGN.md](DESIGN.md)。
 
@@ -36,10 +36,11 @@ flowchart TD
 | `MainWindow.xaml[.cs]` | 設定大小、`FullScreen` / `Overlapped` Presenter |
 | `MainPage.xaml` | 頂端輸入欄、相機預覽、右側快門、左側設定抽屜、右下縮圖、照片 Overlay |
 | `MainPage.xaml.cs` | 裝置枚舉、相機初始化、按鍵、拍照、錄影、模式與畫面狀態；由 `SemaphoreSlim` 序列化相機操作 |
-| `CameraPreferences.cs` | 讀寫純 UI 設定 JSON（不儲存病歷號或影像） |
-| `CaptureIdentity.cs` | 六位 ASCII 數字識別檢查及唯一檔名產生 |
-| `CaptureStore.cs` | PNG/BMP 像素校驗、先寫暫存檔／磁碟讀回、唯一命名與 rename |
-| `tests/CaptureStore.Smoke` | 合成影像的像素、輸出失敗、格式、病歷號與防覆寫測試 |
+| `CameraPreferences.cs` | 讀寫 UI 設定 JSON 與 OutputFolderPolicy 路徑保護（不儲存病歷號） |
+| `CaptureIdentity.cs` | 1–6 位 ASCII 數字標準化為六位、照片 01–99 命名與錄影命名 |
+| `CaptureStore.cs` | PNG/BMP 校驗、同磁碟暫存/驗證、跨副檔名 01–99 流水號，使用本機 mutex 避免競爭及覆寫 |
+| `PhotoBatch.cs` | 本次 App 執行期間，以標準化六位號碼隔離同病歷號照片清單 |
+| `tests/CaptureStore.Smoke` | 合成影像、流水號占用、99 上限、批次分組與路徑驗證回歸測試 |
 | `AGENTS.md` | 正式 HIS 不能讀寫的工程作業限制 |
 
 目前 `MainPage.xaml.cs` 同時承擔 UI 與攝影機 orchestrator，這是 MVP 的簡化實作；未來功能增加才拆分為 camera service、recorder、view model，避免虛構目前不存在的分層。
@@ -80,8 +81,8 @@ sequenceDiagram
 ```
 
 - PNG 保存 RGB 像素無損；BMP 檢查 `BI_RGB` 未壓縮格式。來源已是 MJPEG 等有損訊號的情形無法反向復原。
-- 檔名規則為 `000123_yyyyMMdd_HHmmss_fff_random8.png` 或 `.bmp`，保留前導零，禁止任意路徑注入。
-- 唯一隨機後綴＋`File.Move` 不覆蓋；保存到同目錄的暫存檔再 rename。
+- 照片檔名規則為 `000090_01.png` ... `000090_99.bmp`；同一資料夾同號碼跨圖片格式共享 01–99，已用序號不重複，滿額就拒絕。短病歷號左補零，禁止路徑注入。
+- 預選首個空閒編號，利用同目錄暫存＋非覆寫 `File.Move` 提交；本機跨程序 Mutex 保護同病歷號的流水號競爭。
 - 此流程**不包含** `CH013M1` 更新；不會產生或同步正式 HIS 的影像索引。
 - 仍未做正式臨床等級的跨程序鎖定、意外斷電保證、外部備份或存取稽核。
 
@@ -97,13 +98,14 @@ sequenceDiagram
 
 ```text
 %LOCALAPPDATA%\ClinicCameraCapture-MVP\
-  settings.json          # CameraId / Format / Shortcut / Mode / FullScreen
+  settings.json          # CameraId / Format / Shortcut / Mode / FullScreen / OutputFolder
   captures\              # 測試 PNG、BMP、MP4，嚴禁進 Git
 ```
 
-- 快捷鍵 F8/F9/F10/F12 透過 `MainPage` 鍵盤事件處理；**僅前景有效**，不註冊 `RegisterHotKey`。
+- 快捷鍵 F8/F9/F10/F12 改為 `CameraRoot.KeyboardAccelerators`，由框架處理焦點子控制項；**僅前景有效**，不註冊 `RegisterHotKey`。
 - F11 切換 FullScreen Presenter，Esc 關閉照片／設定或退出全螢幕。
 - 真病歷號出現在影像檔名就是個人識別資料；MVP 只允許使用假號碼測試。
+- 輸出路徑可透過 FolderPicker 或手動輸入設定，MVP 僅接受本機完整路徑、不可進 WM003、junction/symlink 或 UNC 共享。批次相簿按本次執行期間正規化病歷號分組。
 - 公開 GitHub 僅有原始碼、模板資源及合成測試，不放實際診間照片、影片、DBF 或憑證。
 
 ## 7. 建置、測試與發佈

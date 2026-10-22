@@ -1,66 +1,46 @@
-# 診所原生影像擷取 — WinUI 3 MVP v0.3
+# Clinic Camera Capture — Windows Native Camera MVP v0.4
 
-**語言：C# + XAML；框架：WinUI 3 / .NET 10；相機：Windows MediaCapture。**
+**C# + XAML / WinUI 3 / .NET 10 / Windows MediaCapture**
 
-本版是診間擷取卡的**非臨床測試版**。禁止以真實病患測試；不讀寫 `D:\WM003`、`PD011M1`、`CH013M1` 或 HIS 正式影像資料夾。
+非臨床測試版；原 HIS (WM003/DBF) 完全不連線。**僅用虛構病歷號、非病患測試物；不要上傳任何真人照片或病歷資料至公開 GitHub。**
 
-## 相機式 UI（v0.3）
+## 功能
 
-- 啟動時全螢幕覆蓋**實際顯示器解析度**（1920×1080 顯示器即滿版 1920×1080），而不是變更 Windows 的顯示器解析度。
-- 即時相機預覽使用 `Stretch=Uniform`，保留來源完整的 4:3 畫面；16:9 螢幕兩側可能有黑邊，不會裁切內視鏡畫面或憑空增加像素。
-- 左上角齒輪開啟設定抽屜：相機切換、連線/停止、拍照/錄影模式、PNG/BMP 格式、拍照快捷鍵、啟動全螢幕、診斷支援格式。
-- 上方六位數病歷號輸入框：必須是 6 個 ASCII 數字，可保留前導零；若未輸入完整則主按鈕停用。此值**不會記錄到設定檔或 HIS**，僅供本機測試檔案命名。
-- 右側只有一個主要按鈕：拍照模式直接擷取無損 PNG/BMP；錄影模式開始/停止 MP4（僅影像，刻意不錄麥克風）。
-- 拍照快捷鍵：可在設定選擇 F8 / F9 / F10 / F12，**僅限應用程式在前景時**。即使目前切到錄影模式，快捷鍵仍指定為拍照；錄影中不可拍照。
-- F11 切換全螢幕；Esc 關閉大圖/設定或離開全螢幕；Alt+F4 可關閉程式。
-- 右下角為上一次成功拍攝的**照片**縮圖，點擊開啟遮罩全畫面預覽；錄影不會覆蓋照片縮圖。
-- 設定用 `%LOCALAPPDATA%\ClinicCameraCapture-MVP\settings.json` 保留，不存病歷號。
+- 640×480 擷取卡來源可放大在 1920×1080 全螢幕顯示（維持 4:3、左右黑邊；畫質不會變成 HD）。
+- 右側快門拍照／錄影按鈕；右側上方**「× 關閉」**可直接結束全螢幕 App。F11 切換全螢幕，Esc 退出全螢幕／照片檢視。
+- 上方輸入 **1～6 位數字**；儲存時左補零為六位，例如 `90` → `000090`，不得輸入英文字或符號。
+- PNG（無損壓縮）及 BMP（未壓縮）照片保留所取得影格的 RGB 像素；每個病歷號在同一資料夾內使用 `000090_01.png`、`000090_02.bmp` 等 **01～99** 流水號。已存在的序號會跳過，找不到未使用的 01～99 時**拒絕拍照存檔，不覆寫舊照片**。同一序號在 PNG 和 BMP 間不可重複。
+- 右下角「本次照片」縮圖；點進去可以用「上一張」「下一張」瀏覽**這次開啟 App 以來、目前輸入病歷號**拍的所有照片。切換病歷號後各看各的照片。**不掃描舊病歷照片或以前執行過的 App 資料**。
+- 左上設定可選相機、模式、照片格式、F8/F9/F10/F12 拍照快捷鍵及**照片/錄影的本機儲存路徑**。快捷鍵改用 WinUI `KeyboardAccelerator`（在程式前景、相機連線且無設定/大圖覆蓋時使用）；錄影中禁止拍照。
+- MP4 錄影按鈕保持原本的有損錄影流程，不錄製麥克風音訊；**尚未在診間 v0.4 實測**。
 
-## 啟動 / 編譯
+## 儲存路徑與隱私
 
-開發機：直接雙擊 `D:\Dev\clinic-camera-capture\Start-MVP.cmd`。
+預設位置：`%LOCALAPPDATA%\ClinicCameraCapture-MVP\captures\`。可於設定按「瀏覽資料夾」或輸入**本機絕對路徑**，再按「套用儲存路徑」。MVP 拒絕 UNC 網路共享、junction/symlink 和正式 `D:\WM003` 路徑；無寫入權限時不會套用。
+
+偏好設定：`%LOCALAPPDATA%\ClinicCameraCapture-MVP\settings.json`（包含 OutputFolder，但不記錄病歷號）。更換儲存資料夾後，新照片從目標資料夾尚未使用的序號開始；**本次批次相簿依病歷號顯示，可能包含切換路徑前已拍攝的照片**，但不掃描歷史資料。
+
+### 不可忽略的限制
+
+- 每一資料夾每一病歷號**最多 99 個兩位數序號**；同一號碼日後再次就診時，舊序號存在就不可覆蓋。需採不同的保存資料夾或另行設計正式病患/就診識別機制。
+- **PNG 無損不等於來源無損**：如果設備原本使用有損的 MJPEG 或類比訊號品質差，無法還原。
+- 不得以本版寫入正式 HIS；沒有 `PD011M1` 查詢、`CH013M1` 寫入、臨床資料 ACL / 備份 / 稽核。
+- WinUI 快捷鍵在有鍵盤焦點的子控制項裡仍需實機驗證；程式不註冊全域熱鍵。
+- MP4 僅檢查檔案存在及長度，正式影片可播放／意外中斷恢復需人工確認。
+
+## 建置與測試（開發機）
 
 ```powershell
-$env:DOTNET_ROOT = 'D:\tools\dotnet10'
-& 'D:\tools\dotnet10\dotnet.exe' build 'D:\Dev\clinic-camera-capture\ClinicCameraCapture.csproj' -c Debug -p:Platform=x64
-& 'D:\tools\dotnet10\dotnet.exe' run --project 'D:\Dev\clinic-camera-capture\tests\CaptureStore.Smoke\CaptureStore.Smoke.csproj' -c Debug
+& "D:\tools\dotnet10\dotnet.exe" build "D:\Dev\clinic-camera-capture\ClinicCameraCapture.csproj" -c Debug -p:Platform=x64
+& "D:\tools\dotnet10\dotnet.exe" run --project "D:\Dev\clinic-camera-capture\tests\CaptureStore.Smoke\CaptureStore.Smoke.csproj" -c Debug
 ```
 
-診間 Windows 10 電腦**不用裝 Visual Studio**：使用另一份 self-contained 測試資料夾，需複製完整發佈資料夾；不能只複製 EXE。
+開發機可雙擊 `Start-MVP.cmd`。診間 Win10 要使用完整的 self-contained x64 發佈資料夾，不可只複製 EXE。
 
-## 本機存檔位置與資料限制
+## 驗證說明
 
-檔案僅儲存於：`%LOCALAPPDATA%\ClinicCameraCapture-MVP\captures\`
+已自動測試：RGB 無損回讀、BMP BI_RGB、存檔失敗保護、流水號補零、01–99、跨 PNG/BMP 占用、防覆蓋、同病歷號批次分組與儲存路徑 HIS 保護。
 
-照片名稱：`六位病歷號_yyyyMMdd_HHmmss_fff_GUID.png` 或 `.bmp`。
-錄影名稱：`六位病歷號_yyyyMMdd_HHmmss_fff_GUID.mp4`。
+**未實機驗證：** v0.4 全螢幕關閉、WinUI 快捷鍵在診間攝影卡與不同焦點下的運作、路徑 Picker、批次照片 UI、錄影及 USB 裝置異常。
 
-照片經無損編碼後，檢查解碼 RGB 像素一致、磁碟寫入內容與 SHA256，再用同磁碟 rename 提交；不覆寫現有照片。PNG 會無損壓縮，BMP BI_RGB 不壓縮像素。**來源只有 640×480 時，放大至全螢幕仍只包含 640×480 的細節**。如 UVC 來源先經 MJPEG 壓縮，無損存檔不能復原先前資訊。
-
-錄影使用 Windows MP4（有損視訊壓縮），不錄麥克風；`StartRecordToStorageFileAsync` / `StopRecordAsync` 已編譯，但診間 USB 擷取卡是否支援實際錄影需現場驗證。錄影產生失敗或停止時若有部分檔案，應人工檢查，不視為成功錄影。本版不做影片回放。
-
-## 測試檢查
-
-在非看診時段，用**非病患測試物**：
-
-1. 連接 `USB2.0 PC CAMERA`（預計為 VID_18EC&PID_5850），確認自動預覽、全畫面 4:3、設定開閉。
-2. 輸入假病歷號 `000123`，試 F9 快捷鍵、右側拍照按鈕、PNG/BMP 存檔與右下縮圖放大。
-3. 設定中選 F10，再驗證快捷鍵變更後會記住；F11 / Esc 驗證視窗大小切換。
-4. 以非病患測試物錄製短 MP4 並停止；核對檔案大小、能否用本機播放器打開；若失敗記下畫面錯誤。
-5. 關閉重開確認設定持續；拔插 USB、裝置忙碌等需待非看診時間測試。
-6. 切換病歷號後再拍攝，確認檔名前綴變更，不與前張覆寫。
-
-## 安全與下一輪
-
-**這不是已核可的臨床影像管理系統**。病歷號出現在實際檔名時就屬於識別資訊，因此目前只能以假號碼／無病患影像測試。等到檔案權限、存檔保護、正式 HIS 查看 PNG/BMP 與 CH013M1 索引相容性等完成前，不應拿正式病患影像替換原系統。
-
-完整驗證狀態在 `MVP_VALIDATION.md`。
-
-## 專案規格及設計文件
-
-- [SPEC.md](SPEC.md)：v0.3 功能需求、驗收條件與未完成的臨床整合。
-- [ARCHITECTURE.md](ARCHITECTURE.md)：C#/WinUI3/MediaCapture 及影像儲存架構。
-- [DESIGN.md](DESIGN.md)：相機式全螢幕 UI、操作／設定／快捷鍵規格。
-- [MVP_VALIDATION.md](MVP_VALIDATION.md)：哪些項目已測試，哪些仍待診間實測。
-
-> 原使用者指定拼法 `ARCHETECTURE.md` 亦保留為導向 [ARCHITECTURE.md](ARCHITECTURE.md) 的索引。
+詳細資料：[SPEC.md](SPEC.md) · [ARCHITECTURE.md](ARCHITECTURE.md) · [DESIGN.md](DESIGN.md) · [MVP_VALIDATION.md](MVP_VALIDATION.md)。

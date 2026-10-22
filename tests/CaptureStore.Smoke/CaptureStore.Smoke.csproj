@@ -10,5 +10,7 @@
   <ItemGroup>
     <Compile Include="../../CaptureStore.cs" Link="CaptureStore.cs" />
     <Compile Include="../../CaptureIdentity.cs" Link="CaptureIdentity.cs" />
+    <Compile Include="../../PhotoBatch.cs" Link="PhotoBatch.cs" />
+    <Compile Include="../../CameraPreferences.cs" Link="CameraPreferences.cs" />
   </ItemGroup>
 </Project>

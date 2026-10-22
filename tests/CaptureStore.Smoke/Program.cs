@@ -59,7 +59,8 @@ internal static class Program
 
             Require(CaptureIdentity.IsValid("000123"), "leading zeros in six-digit reference");
             Require(!CaptureIdentity.IsValid("../123"), "path traversal input rejected");
-            Require(!CaptureIdentity.IsValid("12345"), "too-short reference rejected");
+            Require(CaptureIdentity.IsValid("12345"), "short reference accepted and padded");
+            Require(CaptureIdentity.Require("90") == "000090", "six-digit left padding");
             var numbered = await store.SaveAsync(frame, "png", "000123");
             Require(Path.GetFileName(numbered.FilePath).StartsWith("000123_", StringComparison.Ordinal),
                 "numbered file uses exact patient reference");
@@ -67,6 +68,46 @@ internal static class Program
             var second = await store.SaveAsync(frame, "png", "000123");
             Require(numbered.FilePath != second.FilePath, "repeated photos never overwrite");
             Console.WriteLine("PASS: six-digit reference naming and collision-free repeated saves.");
+
+            // Requested regression: short decimal IDs must zero-pad to six digits;
+            // sequential still photos are named 000090_01.png ... 000090_99.png.
+            Require(CaptureIdentity.IsValid("90"), "accept short numeric patient reference");
+            var first90 = await store.SaveAsync(frame, "png", "90");
+            Require(Path.GetFileName(first90.FilePath) == "000090_01.png", "first numbered photo");
+            var second90 = await store.SaveAsync(frame, "bmp", "000090");
+            Require(Path.GetFileName(second90.FilePath) == "000090_02.bmp", "sequence shared across image formats");
+            Console.WriteLine("PASS: 6-digit zero padding, predictable 01-99 photo filenames.");
+
+            var batch = new PhotoBatch();
+            batch.Add("90", first90.FilePath);
+            batch.Add("000090", second90.FilePath);
+            batch.Add("91", "different-patient-file.png");
+            Require(batch.For("90").Count == 2, "same normalized reference grouped together");
+            Require(batch.For("000090")[1] == second90.FilePath, "second photo accessible in current batch");
+            Require(batch.For("91").Count == 1 && batch.For("90").Count == 2,
+                "switching patient reference must not mix batches");
+            Console.WriteLine("PASS: in-run per-patient gallery grouping and switching.");
+
+            await File.WriteAllBytesAsync(Path.Combine(root, "000090_03.jpg"), new byte[] {1});
+            var fourth = await store.SaveAsync(frame, "png", "90");
+            Require(Path.GetFileName(fourth.FilePath) == "000090_04.png",
+                "sequence cannot reuse an occupied number in another extension");
+            for (int n = 5; n <= 99; n++)
+                await File.WriteAllBytesAsync(Path.Combine(root, $"000090_{n:00}.png"), new byte[] {1});
+            bool full = false;
+            try { await store.SaveAsync(frame, "png", "90"); }
+            catch (IOException) { full = true; }
+            Require(full, "01-99 full must refuse without overwrite");
+            Require(File.Exists(first90.FilePath), "01 must still exist after exhaustion");
+            Console.WriteLine("PASS: cross-extension collision detection and safe 99 limit.");
+
+            var customOutput = OutputFolderPolicy.Normalize(Path.Combine(root, "custom"));
+            Require(Path.IsPathFullyQualified(customOutput), "custom folder must be absolute");
+            bool guarded = false;
+            try { OutputFolderPolicy.Normalize(@"D:\WM003\IMAGES"); }
+            catch (ArgumentException) { guarded = true; }
+            Require(guarded, "cannot save to production HIS");
+            Console.WriteLine("PASS: local folder selection guards for production HIS.");
             return 0;
         }
         catch (Exception ex)
