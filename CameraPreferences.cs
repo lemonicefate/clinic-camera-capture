@@ -50,39 +50,27 @@ public sealed class CameraPreferences
 }
 
 /// <summary>
-/// Test-only local folder boundary; no direct writing into WM003 or network shares.
-/// A production deployment requires a separate clinical-data threat model.
+/// Normalizes a user-selected destination without imposing an application-level
+/// location allowlist or denylist. This never reads or writes the target path.
+/// Actual access is governed by Windows permissions and the caller's write probe.
 /// </summary>
 public static class OutputFolderPolicy
 {
     public static string Normalize(string? proposed)
     {
-        if (string.IsNullOrWhiteSpace(proposed) ||
-            !Path.IsPathFullyQualified(proposed) ||
-            proposed.StartsWith(@"\\") || proposed.StartsWith(@"//"))
-            throw new ArgumentException("請選擇本機磁碟上的完整資料夾路徑（MVP 不支援網路共享）。");
+        if (string.IsNullOrWhiteSpace(proposed))
+            throw new ArgumentException("請輸入要儲存相片與影片的資料夾路徑。");
 
-        string path;
-        try { path = Path.TrimEndingDirectorySeparator(Path.GetFullPath(proposed)); }
-        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
-        { throw new ArgumentException("無效的儲存路徑。", ex); }
-
-        if (Path.GetPathRoot(path)?.TrimEnd(Path.DirectorySeparatorChar) == path.TrimEnd(Path.DirectorySeparatorChar))
-            throw new ArgumentException("不允許直接使用磁碟根目錄。");
-
-        var forbidden = Path.TrimEndingDirectorySeparator(Path.GetFullPath(@"D:\WM003"));
-        if (path.Equals(forbidden, StringComparison.OrdinalIgnoreCase) ||
-            path.StartsWith(forbidden + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
-            throw new ArgumentException("不可將影像存入正式 WM003 資料夾。");
-
-        // Junctions and symlinks may redirect supposedly local storage into HIS.
-        var cursor = new DirectoryInfo(path);
-        while (cursor is not null)
+        try
         {
-            if (cursor.Exists && cursor.Attributes.HasFlag(FileAttributes.ReparsePoint))
-                throw new ArgumentException("MVP 不允許儲存路徑包含 junction 或 symbolic link。");
-            cursor = cursor.Parent;
+            // Accept local, mapped, UNC, root, junction and symbolic-link paths;
+            // a relative path is resolved to a full path before being saved.
+            var expanded = Environment.ExpandEnvironmentVariables(proposed.Trim().Trim('"'));
+            return Path.TrimEndingDirectorySeparator(Path.GetFullPath(expanded));
         }
-        return path;
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            throw new ArgumentException("儲存路徑格式無效。", ex);
+        }
     }
 }

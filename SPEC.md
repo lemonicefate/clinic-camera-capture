@@ -1,6 +1,6 @@
 # Clinic Camera Capture — SPEC.md
 
-**版本：** MVP v0.4，2026-10-22
+**版本：** MVP v0.4.1，2026-10-22
 
 **平台：** Windows 10 x64（診間為 Build 19045）、Windows 11
 
@@ -19,7 +19,7 @@
 - Microsoft `usbvideo.inf` 驅動正常；診間曾測試 v0.1，預覽／拍照成功，使用者回報最大解析度 640×480。
 - **不代表 v0.3 的錄影、UI、快捷鍵或相機重連已通過實機驗證。**
 
-## 2. MVP v0.4 功能需求
+## 2. MVP v0.4.1 功能需求
 
 ### FR-01 設備探索、預覽
 
@@ -56,13 +56,13 @@
 
 ### FR-08 設定
 
-左上齒輪設定抽屜包含相機、拍照／錄影、格式、快捷鍵、全螢幕、來源格式診斷，及**自訂照片/影片儲存資料夾**（手動路徑與資料夾選取）。選擇後須按「套用」，建立資料夾並測試寫入權限；只能本機完整路徑，禁止正式 WM003、UNC share、junction/symlink。設定 JSON 包含 CameraId、Format、Shortcut、Mode、FullScreen、OutputFolder；不存病歷號。
+左上齒輪設定抽屜包含相機、拍照／錄影、格式、快捷鍵、全螢幕、來源格式診斷，及**自訂照片/影片儲存資料夾**（手動路徑與資料夾選取）。選擇後須按「套用」，建立資料夾並測試寫入權限；不設位置黑名單，允許本機、UNC 網路共享、相對路徑、根目錄及 junction/symlink，也允許使用者指定 WM003 路徑，但**不會寫入 HIS 病歷索引**。設定 JSON 包含 CameraId、Format、Shortcut、Mode、FullScreen、OutputFolder；不存病歷號。
 
 ## 3. 安全／資料界線
 
-- 測試圖片／影片預設 `%LOCALAPPDATA%\ClinicCameraCapture-MVP\captures\`，可改為經 `OutputFolderPolicy` 驗證的本機路徑；不得指向正式 HIS 資料樹。
+- 測試圖片／影片預設 `%LOCALAPPDATA%\ClinicCameraCapture-MVP\captures\`，可改為任何 Windows 可解析且具有寫入權限的資料夾。使用者可指定 HIS 所在資料夾，但僅會新增使用者要求的影像／影片檔案，不會自動寫入病歷索引，也不能因此視為臨床整合成功。
 - 偏好設定只存 `%LOCALAPPDATA%\ClinicCameraCapture-MVP\settings.json`。
-- **不得讀寫** `D:\WM003`、`PD011M1`、`CH013M1`、DBF/CDX/FPT/MEM 或 HIS 正式圖片目錄。
+- 程式不直接存取 `PD011M1`、`CH013M1` 或其他 DBF/CDX/FPT/MEM；**自訂輸出路徑開放為任意資料夾**，包括使用者明確指定的 `D:\WM003` 子目錄，但請勿在正式 HIS 上進行自動化測試，也不得把檔案寫入等同於病歷登錄。
 - **不得以真正病患／真病歷號**做 MVP 測試；只使用假號碼與非病患測試物。
 - GitHub 公開 repo 不得放患者資料、圖片／影片、擷取卡現場影像、憑證或 build 結果。
 - 正式整合前需先有權限、備份、稽核、影像儲存權責、HIS 圖片相容性和 DBF/CDX 一致性方案；在隔離測試複本驗證，禁止用正式 HIS 直接測試寫入。
@@ -91,4 +91,4 @@
 3. 如需正式患者資料，設計受限權限、病歷識別確認、影像生命週期與正式儲存稽核。
 4. 在隔離 DBF 鏡像中確認 HIS 是否支援 PNG/BMP；如只支援 JPG，定義無損原檔與衍生 JPG 的對照策略，以及錯誤後補索引機制。
 
-**範圍界線：** 本專案 v0.4 只是擷取 UI／本機測試影像 MVP，尚非可上線的臨床影像管理系統。
+**範圍界線：** 本專案 v0.4.1 只是擷取 UI／隔離測試影像 MVP，尚非可上線的臨床影像管理系統。

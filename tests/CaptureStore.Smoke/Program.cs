@@ -103,11 +103,23 @@ internal static class Program
 
             var customOutput = OutputFolderPolicy.Normalize(Path.Combine(root, "custom"));
             Require(Path.IsPathFullyQualified(customOutput), "custom folder must be absolute");
-            bool guarded = false;
-            try { OutputFolderPolicy.Normalize(@"D:\WM003\IMAGES"); }
-            catch (ArgumentException) { guarded = true; }
-            Require(guarded, "cannot save to production HIS");
-            Console.WriteLine("PASS: local folder selection guards for production HIS.");
+            // Pure normalization only: never create/read/modify either location.
+            Require(OutputFolderPolicy.Normalize(@"D:\WM003\IMAGES") == @"D:\WM003\IMAGES",
+                "production directory path no longer blocked by app policy");
+            Require(OutputFolderPolicy.Normalize(@"\\fake-server\share\images") == @"\\fake-server\share\images",
+                "UNC network share path accepted without connecting to it");
+            Require(OutputFolderPolicy.Normalize(@"C:\") == @"C:\",
+                "drive root path accepted without writing to it");
+            Require(OutputFolderPolicy.Normalize(@".\test-captures") == Path.GetFullPath(@".\test-captures"),
+                "relative path resolves to an absolute destination");
+            Require(OutputFolderPolicy.Normalize(Path.Combine(root, "custom"))
+                    == Path.GetFullPath(Path.Combine(root, "custom")),
+                "custom test folder accepted without creating it");
+            bool invalid = false;
+            try { OutputFolderPolicy.Normalize(" "); }
+            catch (ArgumentException) { invalid = true; }
+            Require(invalid, "blank output path must still fail");
+            Console.WriteLine("PASS: unrestricted folder selection including UNC, roots and HIS-looking paths.");
             return 0;
         }
         catch (Exception ex)

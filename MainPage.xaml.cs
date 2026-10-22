@@ -190,14 +190,15 @@ public sealed partial class MainPage : Page
         {
             var verified = OutputFolderPolicy.Normalize(OutputFolderBox.Text);
             Directory.CreateDirectory(verified);
-            // Probe access in the intended folder, never in the HIS directory.
+            // Probe only the explicit user-selected folder. Remove the probe
+            // immediately; no HIS DBF/index files are opened or modified.
             var probe = Path.Combine(verified, "." + Guid.NewGuid().ToString("N") + ".tmp");
             using (File.Create(probe)) { }
             File.Delete(probe);
             _preferences.OutputFolder = verified;
             OutputFolderBox.Text = verified;
             SavePreferences();
-            SetStatus("儲存路徑已更新", verified, InfoBarSeverity.Success);
+            SetStatus("儲存路徑已更新", verified + "。只儲存影像/影片檔，不會自動更新 HIS 病歷索引。", InfoBarSeverity.Success);
         }
         catch (Exception ex) { SetStatus("無法使用這個儲存路徑", ex.Message, InfoBarSeverity.Error); }
     }

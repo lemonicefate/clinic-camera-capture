@@ -122,12 +122,12 @@
                         </ComboBox>
                         <TextBlock Text="照片及影片儲存資料夾" FontWeight="SemiBold"/>
                         <TextBox x:Name="OutputFolderBox" Width="390" HorizontalAlignment="Left"
-                                 PlaceholderText="本機資料夾完整路徑" TextWrapping="NoWrap"/>
+                                 PlaceholderText="任意資料夾路徑，例如 D:\Photos 或 \\server\share" TextWrapping="NoWrap"/>
                         <StackPanel Orientation="Horizontal" Spacing="8">
                             <Button Content="瀏覽資料夾…" Click="BrowseFolderButton_Click"/>
                             <Button Content="套用儲存路徑" Click="ApplyOutputFolderButton_Click"/>
                         </StackPanel>
-                        <TextBlock Text="測試版限制：不得指定 HIS 目錄或網路共享，且只使用非病患測試影像。"
+                        <TextBlock Text="可指定本機、網路共享、磁碟根目錄或 HIS 資料夾，但必須有寫入權限。請勿使用真實病患影像測試；儲存檔案不會自動登錄 HIS 病歷索引。"
                                    Foreground="#F0CC9A" TextWrapping="Wrap"/>
                         <TextBlock Text="拍照快捷鍵（程式在前景時）" FontWeight="SemiBold"/>
                         <ComboBox x:Name="ShortcutPicker" Width="390" SelectedIndex="1"

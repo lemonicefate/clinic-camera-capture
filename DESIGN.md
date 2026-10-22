@@ -1,6 +1,6 @@
 # Clinic Camera Capture — DESIGN.md
 
-**版本：** v0.4（2026-10-22）
+**版本：** v0.4.1（2026-10-22）
 
 **視覺參考：** 使用者提供的 Windows「相機」App 截圖。
 
@@ -62,7 +62,7 @@
 | 拍照快捷鍵 | F9 | F8、F9、F10、F12（**只有前景**） |
 | 啟動時全螢幕 | 開啟 | F11 手動切換，Esc 返回 |
 | 來源格式 | 驅動支援的 Subtype／FPS／解析度 | 可切換預覽格式、複製清單 |
-| 自訂儲存資料夾 | 預設 MVP 本機 LocalAppData | 可瀏覽本機資料夾並套用；禁止正式 HIS、UNC 共享或 junction/symlink |
+| 自訂儲存資料夾 | 預設 MVP LocalAppData | 可瀏覽或輸入任何 Windows 可用路徑（含 UNC／映射磁碟／junction／HIS）；須具寫入權限。指定 HIS 目錄也不會自動更新病歷索引 |
 
 `CameraPreferences.cs` 保存非病患 UI 偏好，**不保存病歷號**。
 

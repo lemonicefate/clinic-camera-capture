@@ -1,7 +1,7 @@
 # Agent rules: Clinic Camera Capture MVP
 
 - This repository contains an isolated non-clinical camera proof-of-concept, NOT the deployed HIS capture application.
-- Never read, write, delete, migrate, reindex, pack, update, or lock production `D:\WM003\` or its DBF/CDX/FPT/IMAGES files as part of implementation or testing.
+- Never read, write, delete, migrate, reindex, pack, update, or lock production `D:\WM003\` or its DBF/CDX/FPT/IMAGES files as part of implementation or testing. The app may allow a user-chosen path anywhere, but agents and automated tests must never exercise that capability against production HIS; photo file storage is not HIS indexing.
 - Use only generated synthetic frames and local disposable test directories in automated tests.
 - Do not ingest, copy, upload, log, or commit patient data or actual patient photos.
 - The capture API must remain Windows MediaCapture/Media Foundation native; legacy VideoCapX OCX cannot be a required component.
