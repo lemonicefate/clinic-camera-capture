@@ -1,4 +1,4 @@
-# MVP v0.5 diagnostics and validation — 2026-10-23
+# MVP v0.6 diagnostics and validation — 2026-10-23
 
 ## Method (mattpocock/skills: diagnosing-bugs)
 
@@ -35,4 +35,5 @@
 - WinUI FileOpenPicker for PD011M1, both LostFocus query flows, gallery left/right arrow keys, folder picker, and actual camera/recording still need interactive physical validation. No real patient details should be included in bug screenshots or logs. WinUI FolderPicker, path selection UI (especially UNC permissions and WinRT video APIs), gallery prev/next buttons, and top-right close while full-screen need physical interactive field verification. Explicitly selecting a folder under HIS does not register a corresponding HIS photo index.
 - USB capture-card MP4 recording, abrupt disconnection, backup, permissions, disk exhaustion and shared drive behavior remain untested.
 - The v0.5 app allows a user to configure **PD011M1.dbf for read-only NUM/ID/NAME lookup**, using FileAccess.Read, FileShare.ReadWrite|Delete and a transient in-memory index. It does **not** read/write CDX/FPT or CH013M1. No real patient data were read during implementation/testing. Actual DBF field types, CP950 strings, file mutation timing, patient identity ambiguity, and UI focus behavior require clinic validation, initially on an isolated DBF copy.
-- Per-patient numbering is **per selected storage directory**, up to 99; the program refuses after full and does not delete or overwrite.
+- v0.6: CaptureStore uses <root>/<six-digit-number>_<yyyyMMdd>/, based on Windows local shutter date (or recording start date). Automated synthetic-image tests verify same date & MRN folder reuse across simulated app instances, 01–99 numbering, next-day folder rollover and independent _01 sequence, other-patient separation, and preservation of previous day's images. Prior plain patient-number subfolders and root-level files are **not migrated**.
+- Per-patient numbering is **per patient+date directory**, up to 99; the program refuses after full and does not delete or overwrite. Clinic camera and MP4 storage tests on the device still pending.

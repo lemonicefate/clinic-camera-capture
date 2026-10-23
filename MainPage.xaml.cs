@@ -696,6 +696,9 @@ public sealed partial class MainPage : Page
             if (_recording) throw new InvalidOperationException("錄影進行中，請先停止錄影。");
             if (_camera is null) throw new InvalidOperationException("請先連線相機。");
             var patientNumber = CaptureIdentity.Require(PatientNumberBox.Text);
+            // Resolve the local calendar date when the shutter is pressed, not
+            // after potentially slow image encoding or network storage.
+            var captureDate = DateOnly.FromDateTime(DateTime.Now);
             var session = await _camera.PrepareLowLagPhotoCaptureAsync(
                 ImageEncodingProperties.CreateUncompressed(MediaPixelFormat.Bgra8));
             try
@@ -703,13 +706,14 @@ public sealed partial class MainPage : Page
                 var photo = await session.CaptureAsync();
                 using var bitmap = photo.Frame.SoftwareBitmap
                     ?? throw new InvalidOperationException("無法取得未壓縮影像像素。");
-                var saved = await CurrentStore.SaveAsync(bitmap, _preferences.Format, patientNumber);
+                var saved = await CurrentStore.SaveAsync(bitmap, _preferences.Format,
+                    patientNumber, captureDate: captureDate);
                 _batch.Add(patientNumber, saved.FilePath);
                 try
                 {
                     await RefreshBatchThumbnailAsync();
                     SetStatus("照片已通過驗證",
-                        $"{saved.Width}×{saved.Height}、{saved.Bytes:N0} bytes。檔案僅在本機測試目錄，尚未登錄 HIS。",
+                        $"{saved.Width}×{saved.Height}、{saved.Bytes:N0} bytes。照片已存入病歷號與日期資料夾，未登錄 HIS。",
                         InfoBarSeverity.Success);
                 }
                 catch (Exception displayError)
@@ -811,8 +815,12 @@ public sealed partial class MainPage : Page
             {
                 if (_camera is null) throw new InvalidOperationException("請先連線攝影機。");
                 var patientNumber = CaptureIdentity.Require(PatientNumberBox.Text);
-                Directory.CreateDirectory(_preferences.OutputFolder);
-                var folder = await StorageFolder.GetFolderFromPathAsync(_preferences.OutputFolder);
+                // Recording is filed under the local date at recording START.
+                // A video spanning midnight remains in that start-date folder.
+                var patientFolder = CurrentStore.PatientFolder(patientNumber,
+                    DateOnly.FromDateTime(DateTime.Now));
+                Directory.CreateDirectory(patientFolder);
+                var folder = await StorageFolder.GetFolderFromPathAsync(patientFolder);
                 var filename = CaptureIdentity.VideoName(patientNumber);
                 var file = await folder.CreateFileAsync(filename, CreationCollisionOption.FailIfExists);
                 _recordingPath = file.Path;
@@ -848,7 +856,7 @@ public sealed partial class MainPage : Page
             if (_recordingPath is null || !File.Exists(_recordingPath)
                 || new FileInfo(_recordingPath).Length == 0)
                 throw new IOException("錄影停止，但未產生有效影像檔案。");
-            SetStatus("錄影已停止", "MP4 已存至本機測試資料夾；沒有寫入 HIS。",
+            SetStatus("錄影已停止", "MP4 已存至病歷號與錄影開始日期的資料夾；未寫入 HIS 病歷索引。",
                 InfoBarSeverity.Success);
         }
         finally
@@ -863,7 +871,15 @@ public sealed partial class MainPage : Page
         try
         {
             Directory.CreateDirectory(_preferences.OutputFolder);
-            Process.Start(new ProcessStartInfo("explorer.exe", "\"" + _preferences.OutputFolder + "\"")
+            var patientFolder = CaptureIdentity.IsValid(PatientNumberBox.Text)
+                ? CurrentStore.PatientFolder(PatientNumberBox.Text)
+                : null;
+            // If there are no photos yet, show the configured root rather
+            // than creating a misleading empty patient folder.
+            var folderToOpen = patientFolder is not null && Directory.Exists(patientFolder)
+                ? patientFolder
+                : _preferences.OutputFolder;
+            Process.Start(new ProcessStartInfo("explorer.exe", "\"" + folderToOpen + "\"")
             {
                 UseShellExecute = true
             });

@@ -61,21 +61,33 @@ internal static class Program
             Require(!CaptureIdentity.IsValid("../123"), "path traversal input rejected");
             Require(CaptureIdentity.IsValid("12345"), "short reference accepted and padded");
             Require(CaptureIdentity.Require("90") == "000090", "six-digit left padding");
-            var numbered = await store.SaveAsync(frame, "png", "000123");
+            var numbered = await store.SaveAsync(frame, "png", "000123", captureDate: new DateOnly(2026, 10, 23));
             Require(Path.GetFileName(numbered.FilePath).StartsWith("000123_", StringComparison.Ordinal),
                 "numbered file uses exact patient reference");
+            Require(Path.GetDirectoryName(numbered.FilePath) == Path.Combine(root, "000123_20261023"),
+                "patient 000123 photo stored only in matching subfolder");
             Require(File.Exists(numbered.FilePath), "numbered photo exists");
-            var second = await store.SaveAsync(frame, "png", "000123");
+            var second = await store.SaveAsync(frame, "png", "000123", captureDate: new DateOnly(2026, 10, 23));
             Require(numbered.FilePath != second.FilePath, "repeated photos never overwrite");
             Console.WriteLine("PASS: six-digit reference naming and collision-free repeated saves.");
 
             // Requested regression: short decimal IDs must zero-pad to six digits;
             // sequential still photos are named 000090_01.png ... 000090_99.png.
             Require(CaptureIdentity.IsValid("90"), "accept short numeric patient reference");
-            var first90 = await store.SaveAsync(frame, "png", "90");
+            var first90 = await store.SaveAsync(frame, "png", "90", captureDate: new DateOnly(2026, 10, 23));
+            var patient90Folder = Path.Combine(root, "000090_20261023");
+            Require(Path.GetDirectoryName(first90.FilePath) == patient90Folder,
+                "photo must go in the six-digit patient subfolder");
+            Require(Directory.Exists(patient90Folder), "patient subfolder created on first photo");
             Require(Path.GetFileName(first90.FilePath) == "000090_01.png", "first numbered photo");
-            var second90 = await store.SaveAsync(frame, "bmp", "000090");
+            var second90 = await store.SaveAsync(frame, "bmp", "000090", captureDate: new DateOnly(2026, 10, 23));
             Require(Path.GetFileName(second90.FilePath) == "000090_02.bmp", "sequence shared across image formats");
+            Require(Path.GetDirectoryName(second90.FilePath) == patient90Folder,
+                "same patient photo format shares same folder");
+            Require(!File.Exists(Path.Combine(root, "000090_01.png")),
+                "photo must not be accidentally saved at the configured root");
+            Require(store.PatientFolder("90", new DateOnly(2026, 10, 23)) == patient90Folder,
+                "video and photo share the same normalized folder resolver");
             Console.WriteLine("PASS: 6-digit zero padding, predictable 01-99 photo filenames.");
 
             var batch = new PhotoBatch();
@@ -88,18 +100,52 @@ internal static class Program
                 "switching patient reference must not mix batches");
             Console.WriteLine("PASS: in-run per-patient gallery grouping and switching.");
 
-            await File.WriteAllBytesAsync(Path.Combine(root, "000090_03.jpg"), new byte[] {1});
-            var fourth = await store.SaveAsync(frame, "png", "90");
+            await File.WriteAllBytesAsync(Path.Combine(patient90Folder, "000090_03.jpg"), new byte[] {1});
+            var fourth = await store.SaveAsync(frame, "png", "90", captureDate: new DateOnly(2026, 10, 23));
             Require(Path.GetFileName(fourth.FilePath) == "000090_04.png",
                 "sequence cannot reuse an occupied number in another extension");
             for (int n = 5; n <= 99; n++)
-                await File.WriteAllBytesAsync(Path.Combine(root, $"000090_{n:00}.png"), new byte[] {1});
+                await File.WriteAllBytesAsync(Path.Combine(patient90Folder, $"000090_{n:00}.png"), new byte[] {1});
             bool full = false;
-            try { await store.SaveAsync(frame, "png", "90"); }
+            try { await store.SaveAsync(frame, "png", "90", captureDate: new DateOnly(2026, 10, 23)); }
             catch (IOException) { full = true; }
             Require(full, "01-99 full must refuse without overwrite");
             Require(File.Exists(first90.FilePath), "01 must still exist after exhaustion");
             Console.WriteLine("PASS: cross-extension collision detection and safe 99 limit.");
+
+            // Separate patient photos and recordings must never share a leaf folder.
+            var first91 = await store.SaveAsync(frame, "png", "91", captureDate: new DateOnly(2026, 10, 23));
+            Require(Path.GetFileName(first91.FilePath) == "000091_01.png",
+                "different patient sequence starts at 01 independently");
+            Require(Path.GetDirectoryName(first91.FilePath) == Path.Combine(root, "000091_20261023"),
+                "different patient uses another folder");
+            Require(store.PatientFolder("000091", new DateOnly(2026, 10, 23)) != store.PatientFolder("90", new DateOnly(2026, 10, 23)),
+                "folder normalization isolates separate patients");
+            var alternative = new CaptureStore(Path.Combine(root, "alternate-root"));
+            var first90Elsewhere = await alternative.SaveAsync(frame, "png", "90", captureDate: new DateOnly(2026, 10, 23));
+            Require(Path.GetFileName(first90Elsewhere.FilePath) == "000090_01.png" &&
+                    Path.GetDirectoryName(first90Elsewhere.FilePath) == Path.Combine(root, "alternate-root", "000090_20261023"),
+                "different configured root creates independent patient folder and numbering");
+            Require(File.Exists(first90.FilePath), "new saves never relocate or delete existing photos");
+            Console.WriteLine("PASS: per-patient subfolders, independent sequence and configured root.");
+
+            // Date is the local capture date, not the app start date: new day
+            // creates a distinct folder with its own numbering, same day reuses.
+            var nextDay = new DateOnly(2026, 10, 24);
+            var nextDayFirst = await store.SaveAsync(frame, "png", "90", captureDate: nextDay);
+            Require(Path.GetDirectoryName(nextDayFirst.FilePath) == Path.Combine(root, "000090_20261024"),
+                "following date uses separate patient plus date folder");
+            Require(Path.GetFileName(nextDayFirst.FilePath) == "000090_01.png",
+                "numbering restarts for same patient on a different date");
+            var newSession = new CaptureStore(root);
+            var nextDaySecond = await newSession.SaveAsync(frame, "bmp", "000090", captureDate: nextDay);
+            Require(Path.GetDirectoryName(nextDaySecond.FilePath) == Path.GetDirectoryName(nextDayFirst.FilePath),
+                "second app instance reuses folder on same date");
+            Require(Path.GetFileName(nextDaySecond.FilePath) == "000090_02.bmp",
+                "second app instance continues numbering rather than replacing prior file");
+            Require(File.Exists(first90.FilePath) && File.Exists(nextDayFirst.FilePath),
+                "new date does not delete or overwrite earlier date");
+            Console.WriteLine("PASS: patient+date folders, next-day rollover, and cross-session numbering.");
 
             var customOutput = OutputFolderPolicy.Normalize(Path.Combine(root, "custom"));
             Require(Path.IsPathFullyQualified(customOutput), "custom folder must be absolute");

@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Cryptography;
 using Windows.Graphics.Imaging;
 using Windows.Storage.Streams;
@@ -5,8 +6,8 @@ using Windows.Storage.Streams;
 namespace ClinicCameraCapture;
 
 /// <summary>
-/// MVP-only storage: no patient IDs, no WM003 paths, no HIS writes.
-/// File bytes are verified before a collision-safe same-volume rename.
+/// User-selected root storage: a separate patient+local-date folder for each
+/// capture day. No HIS DBF/index writes. Verify bytes before same-volume rename.
 /// </summary>
 public sealed class CaptureStore
 {
@@ -18,12 +19,24 @@ public sealed class CaptureStore
     public string OutputFolder { get; }
     public CaptureStore(string? outputFolder = null) => OutputFolder = outputFolder ?? Folder;
 
-    public async Task<SavedCapture> SaveAsync(SoftwareBitmap original, string extension, string? patientNumber = null)
+    // OutputFolder is the configured root. Same patient and local calendar day
+    // resolve to the same folder across app launches. Different days are separate.
+    public string PatientFolder(string patientNumber, DateOnly? captureDate = null)
     {
-        return await SaveCoreAsync(original, extension, patientNumber);
+        string number = CaptureIdentity.Require(patientNumber);
+        var localDay = captureDate ?? DateOnly.FromDateTime(DateTime.Now);
+        return Path.Combine(OutputFolder, number + "_" +
+            localDay.ToString("yyyyMMdd", CultureInfo.InvariantCulture));
     }
 
-    private async Task<SavedCapture> SaveCoreAsync(SoftwareBitmap original, string extension, string? patientNumber)
+    public async Task<SavedCapture> SaveAsync(SoftwareBitmap original, string extension,
+        string? patientNumber = null, DateOnly? captureDate = null)
+    {
+        return await SaveCoreAsync(original, extension, patientNumber, captureDate);
+    }
+
+    private async Task<SavedCapture> SaveCoreAsync(SoftwareBitmap original, string extension,
+        string? patientNumber, DateOnly? captureDate)
     {
         if (extension is not ("png" or "bmp"))
             throw new ArgumentException("Only lossless PNG and uncompressed BMP are supported.", nameof(extension));
@@ -63,8 +76,11 @@ public sealed class CaptureStore
         if (extension == "bmp" && (encoded.Length < 34 || BitConverter.ToUInt32(encoded, 30) != 0))
             throw new InvalidDataException("BMP was not encoded as uncompressed BI_RGB.");
 
-        Directory.CreateDirectory(OutputFolder);
-        var tmp = Path.Combine(OutputFolder, "." + Guid.NewGuid().ToString("N") + ".tmp");
+        string targetFolder = normalizedPatient is null
+            ? OutputFolder
+            : PatientFolder(normalizedPatient, captureDate);
+        Directory.CreateDirectory(targetFolder);
+        var tmp = Path.Combine(targetFolder, "." + Guid.NewGuid().ToString("N") + ".tmp");
         string? saved = null;
         try
         {
@@ -84,7 +100,7 @@ public sealed class CaptureStore
             // ANY photo extension. Never overwrite another image on disk.
             if (normalizedPatient is null)
             {
-                saved = Path.Combine(OutputFolder, "TEST_" + DateTime.Now.ToString("yyyyMMdd_HHmmss_fff")
+                saved = Path.Combine(targetFolder, "TEST_" + DateTime.Now.ToString("yyyyMMdd_HHmmss_fff")
                     + "_" + Guid.NewGuid().ToString("N")[..8] + "." + extension);
                 File.Move(tmp, saved);
             }
@@ -93,7 +109,7 @@ public sealed class CaptureStore
                 // A named mutex protects the cross-extension sequence across
                 // concurrent instances on this workstation / in this directory.
                 var lockKey = Convert.ToHexString(SHA256.HashData(
-                    System.Text.Encoding.UTF8.GetBytes(Path.GetFullPath(OutputFolder).ToUpperInvariant() + "|" + normalizedPatient)));
+                    System.Text.Encoding.UTF8.GetBytes(Path.GetFullPath(targetFolder).ToUpperInvariant())));
                 using var gate = new Mutex(false, "Local\\ClinicCameraCapture_" + lockKey);
                 bool acquired = false;
                 try
@@ -104,10 +120,10 @@ public sealed class CaptureStore
                     for (int no = 1; no <= 99; no++)
                     {
                         var prefix = $"{normalizedPatient}_{no:00}.";
-                        bool inUse = Directory.EnumerateFiles(OutputFolder, normalizedPatient + "_*")
+                        bool inUse = Directory.EnumerateFiles(targetFolder, normalizedPatient + "_*")
                             .Any(path => Path.GetFileName(path).StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
                         if (inUse) continue;
-                        var candidate = Path.Combine(OutputFolder, CaptureIdentity.PhotoName(normalizedPatient, no, extension));
+                        var candidate = Path.Combine(targetFolder, CaptureIdentity.PhotoName(normalizedPatient, no, extension));
                         File.Move(tmp, candidate); // Fails instead of overwriting.
                         saved = candidate;
                         break;

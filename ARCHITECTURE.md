@@ -1,6 +1,6 @@
 # Clinic Camera Capture — ARCHITECTURE.md
 
-**範圍：** Windows 原生相機 UI + 自訂路徑存檔 + 選配 PD011M1 唯讀查詢（MVP v0.5；HIS 影像索引仍不連接）。
+**範圍：** Windows 原生相機 UI + 病歷號與本地日期分批存檔 + 選配 PD011M1 唯讀查詢（MVP v0.6；HIS 影像索引仍不連接）。
 
 詳見 [SPEC.md](SPEC.md) 及 [DESIGN.md](DESIGN.md)。
 
@@ -16,7 +16,8 @@ flowchart TD
     Bitmap --> Store[CaptureStore]
     UI --> Identity[CaptureIdentity: 六位數驗證]
     Identity --> Store
-    Store --> Local[LocalAppData 測試照片目錄]
+    Store --> Folder[使用者儲存根目錄/病歷號_yyyyMMdd]
+    Folder --> Local[PNG/BMP/MP4 檔案]
     Camera --> Video[MP4 RecordToStorageFile]
     Video --> Local
     UI --> Prefs[CameraPreferences JSON]
@@ -41,7 +42,7 @@ flowchart TD
 | `MainPage.xaml.cs` | 裝置枚舉、相機初始化、按鍵、拍照、錄影、模式與畫面狀態；由 `SemaphoreSlim` 序列化相機操作 |
 | `CameraPreferences.cs` | 讀寫 UI 設定 JSON 與 OutputFolderPolicy 路徑格式正規化（不限制 Windows 資料夾位置、不儲存病歷號） |
 | `CaptureIdentity.cs` | 1–6 位 ASCII 數字標準化為六位、照片 01–99 命名與錄影命名 |
-| `CaptureStore.cs` | PNG/BMP 校驗、同磁碟暫存/驗證、跨副檔名 01–99 流水號，使用本機 mutex 避免競爭及覆寫 |
+| `CaptureStore.cs` | 以病歷號與 Windows 本地日期解析儲存子資料夾；PNG/BMP 校驗、同磁碟暫存／驗證、跨格式 01–99 編號；本機 mutex 防止同目錄程序互相覆寫 |
 | `PhotoBatch.cs` | 本次 App 執行期間，以標準化六位號碼隔離同病歷號照片清單 |
 | `PatientDbfPathPolicy.cs` | 檢查設定路徑的檔名必須為 PD011M1.dbf，不開啟資料 |
 | `PatientDbfReader.cs` | 非獨占 FileAccess.Read、FileShare.ReadWrite/Delete，解析 DBF/C/N 欄位與 CP950，排除刪除標記並在 RAM 建 NUM/ID lookup |
@@ -87,14 +88,15 @@ sequenceDiagram
 ```
 
 - PNG 保存 RGB 像素無損；BMP 檢查 `BI_RGB` 未壓縮格式。來源已是 MJPEG 等有損訊號的情形無法反向復原。
-- 照片檔名規則為 `000090_01.png` ... `000090_99.bmp`；同一資料夾同號碼跨圖片格式共享 01–99，已用序號不重複，滿額就拒絕。短病歷號左補零，禁止路徑注入。
+- 照片與影片統一儲存在 `<OutputFolder>/<六碼病歷號>_<yyyyMMdd>/`，例 `D:\\ClinicPhotos\\000090_20261023\\`。日期是相機按下快門時（照片）或開始錄影時（MP4）的本地日期，**不是開啟 App 的日期**。
+- 照片檔名維持 `000090_01.png` ... `000090_99.bmp`；**同病歷號同日重新開程式也沿用資料夾**，沿用已用流水號，跨格式編號不重複；隔日另起資料夾與 `_01` 序號。舊版已存在的純病歷號資料夾不搬移。
 - 預選首個空閒編號，利用同目錄暫存＋非覆寫 `File.Move` 提交；本機跨程序 Mutex 保護同病歷號的流水號競爭。
 - 此流程**不包含** `CH013M1` 更新；不會產生或同步正式 HIS 的影像索引。
 - 仍未做正式臨床等級的跨程序鎖定、意外斷電保證、外部備份或存取稽核。
 
 ## 5. MP4 錄影與 UI 狀態
 
-- 在左側設定切換 `photo` / `video`；右側一個按鈕執行照片保存或 MP4 開始／停止。
+- 在左側設定切換 `photo` / `video`；右側一個按鈕執行照片保存或 MP4 開始／停止。錄影開始當下解析日期子資料夾，**橫跨午夜仍保存於錄影開始的日期**。
 - MP4 使用 `MediaEncodingProfile.CreateMp4(VideoEncodingQuality.Auto)`，`Audio=null` 禁錄音；**影片不是無損**。
 - 開始錄影後鎖定六位參考號與設定切換；錄影中 REC 標記顯示。停止後檢查輸出檔是否存在且非零大小，**不代表已完整驗證可解碼**。
 - 若初始化錄影失敗且產生空檔，刪除僅該新建空檔；非零部分錄影需保留供診斷。
