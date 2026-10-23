@@ -1,4 +1,30 @@
-# MVP v0.6 diagnostics and validation — 2026-10-23
+# MVP v0.6.1 diagnostics and validation — 2026-10-23
+
+## v0.6.1 regression: patient fields disappear after successful lookup
+
+Using mattpocock/skills `diagnosing-bugs`, constructed a **real WinUI UI Automation** reproduction (not a mock) against the unmodified v0.6 self-contained executable and a disposable synthetic PD011M1.dbf. Both forward NUM and reverse ID lookup initially returned **ReportedSuccess=True**, but **NumberEmpty=True, IdEmpty=True, NameEmpty=True** with test **FAIL**. This is the exact user-reported symptom.
+
+After creating that failing feedback loop, investigated these falsifiable hypotheses in order: (1) delayed, programmatic `TextChanged` notifications racing a short-lived `_updatingPatientFields` guard; (2) `LostFocus` re-entrancy; (3) asynchronous lookup response ordering. A temporary state-only trace (never patient values) showed the lookup **did fill all fields**, then queued `TextChanged` arrived **after** the guard was lowered, and the two field-clearing handlers cascaded. Diagnosis (1) confirmed. All temporary debug instrumentation was removed before release.
+
+Fix: programmatically assigned TextBox values are recognized via a pending expected-value marker; a fully resolved pair of identifiers is also recognized. True user edits still clear the opposite field and name, without recursively erasing the currently edited value. Enter explicitly commits either input field; LostFocus continues to work. Lookup remains read-only and generation-checked.
+
+### Repeatable regression command (Windows development desktop)
+
+```powershell
+$exe = "D:\tools\rea-analysis\image-capture-his\win10-camera-mvp-v061\ClinicCameraCapture.exe"
+foreach ($field in @("forward","reverse")) {
+    foreach ($trigger in @("focus","enter")) {
+        powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tests\PatientLookup.UiRepro.ps1 -Exe $exe -Direction $field -Trigger $trigger
+        if ($LASTEXITCODE -ne 0) { throw "WinUI lookup regression: $field / $trigger" }
+    }
+}
+```
+
+The fixture contains **only synthetic, non-patient identifiers**, runs no camera capture, and temporarily backs up/restores the user's own local settings file. No real clinic DBF/CDX is accessed. Asserted: lookup succeeds, all three visible fields remain correct, and modifying the input invalidates the old patient while preserving what was typed.
+
+**After fix:** all four forward/reverse × Enter/LostFocus scenarios passed on the development machine. The actual clinic Windows 10 hardware and real DBF interactions still need a separate read-only field acceptance test without exposing patient values to logs or Git.
+
+## Historical diagnostic notes (previous versions)
 
 ## Method (mattpocock/skills: diagnosing-bugs)
 

@@ -31,13 +31,15 @@
                              MaxLength="6" PlaceholderText="六位病歷號"
                              TextChanged="PatientNumberBox_TextChanged"
                              LostFocus="PatientNumberBox_LostFocus"
+                             KeyDown="PatientNumberBox_KeyDown"
                              HorizontalTextAlignment="Center"/>
                     <TextBlock Text="身分證號" FontSize="15" VerticalAlignment="Center"/>
                     <TextBox x:Name="PatientIdBox" Width="190" Height="45"
                              FontFamily="Consolas" FontSize="18"
                              MaxLength="24" PlaceholderText="輸入身分證查病歷"
                              TextChanged="PatientIdBox_TextChanged"
-                             LostFocus="PatientIdBox_LostFocus"/>
+                             LostFocus="PatientIdBox_LostFocus"
+                             KeyDown="PatientIdBox_KeyDown"/>
                     <TextBlock Text="姓名" FontSize="15" VerticalAlignment="Center"/>
                     <TextBox x:Name="PatientNameBox" Width="146" Height="45" FontSize="18"
                              IsReadOnly="True" IsTabStop="False"

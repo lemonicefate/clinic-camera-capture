@@ -36,6 +36,8 @@ public sealed partial class MainPage : Page
     private readonly PatientLookupService _patientLookup = new();
     private readonly KeyboardAccelerator _photoAccelerator = new();
     private bool _updatingPatientFields;
+    private string? _expectedNumberText;
+    private string? _expectedIdText;
     private bool _patientLookupBusy;
     private int _patientLookupGeneration;
     private string? _resolvedPatientNumber;
@@ -160,15 +162,48 @@ public sealed partial class MainPage : Page
             ? "拍照快捷鍵：" + _preferences.Shortcut : "錄影：按鈕開始／停止");
     }
 
+    // Programmatic TextBox.Text writes may dispatch TextChanged later, after
+    // _updatingPatientFields is false. Track their expected field value until
+    // WinUI delivers its corresponding event, rather than treating it as typing.
+    private void SetPatientNumberText(string value)
+    {
+        if (PatientNumberBox.Text == value) return;
+        _expectedNumberText = value;
+        PatientNumberBox.Text = value;
+    }
+
+    private void SetPatientIdText(string value)
+    {
+        if (PatientIdBox.Text == value) return;
+        _expectedIdText = value;
+        PatientIdBox.Text = value;
+    }
+
+    private static bool ConsumeProgrammaticEvent(ref string? expected, string actual)
+    {
+        bool isProgrammatic = expected is not null &&
+            string.Equals(expected, actual, StringComparison.Ordinal);
+        expected = null;
+        return isProgrammatic;
+    }
+
+    // A successful lookup may also queue duplicate events: compare both
+    // resolved identifiers before treating a notification as a user edit.
+    private bool DisplaysResolvedPatient() =>
+        _resolvedPatientNumber is not null &&
+        string.Equals(PatientNumberBox.Text, _resolvedPatientNumber, StringComparison.Ordinal) &&
+        string.Equals(PatientIdBox.Text, _resolvedPatientId, StringComparison.OrdinalIgnoreCase);
+
     private async void PatientNumberBox_TextChanged(object sender, TextChangedEventArgs e)
     {
-        if (_updatingPatientFields) return;
+        if (ConsumeProgrammaticEvent(ref _expectedNumberText, PatientNumberBox.Text) ||
+            _updatingPatientFields || DisplaysResolvedPatient()) return;
         _patientLookupGeneration++;
         _resolvedPatientNumber = null;
         _resolvedPatientId = null;
         _patientLookupBusy = false;
         _updatingPatientFields = true;
-        PatientIdBox.Text = "";
+        SetPatientIdText("");
         PatientNameBox.Text = "";
         _updatingPatientFields = false;
         UpdateButtons();
@@ -178,13 +213,14 @@ public sealed partial class MainPage : Page
 
     private async void PatientIdBox_TextChanged(object sender, TextChangedEventArgs e)
     {
-        if (_updatingPatientFields) return;
+        if (ConsumeProgrammaticEvent(ref _expectedIdText, PatientIdBox.Text) ||
+            _updatingPatientFields || DisplaysResolvedPatient()) return;
         _patientLookupGeneration++;
         _resolvedPatientNumber = null;
         _resolvedPatientId = null;
         _patientLookupBusy = false;
         _updatingPatientFields = true;
-        PatientNumberBox.Text = "";
+        SetPatientNumberText("");
         PatientNameBox.Text = "";
         _updatingPatientFields = false;
         UpdateButtons();
@@ -192,21 +228,42 @@ public sealed partial class MainPage : Page
         catch { SetStatus("縮圖載入失敗", "目前無法載入照片縮圖。", InfoBarSeverity.Warning); }
     }
 
-    private async void PatientNumberBox_LostFocus(object sender, RoutedEventArgs e)
+    private async Task CommitPatientNumberAsync()
     {
         if (!CaptureIdentity.IsValid(PatientNumberBox.Text)) return;
         string normalized = CaptureIdentity.Require(PatientNumberBox.Text);
         _updatingPatientFields = true;
-        PatientNumberBox.Text = normalized;
+        SetPatientNumberText(normalized);
         _updatingPatientFields = false;
+        if (HasValidPatient && _resolvedPatientNumber == normalized) return;
         await ResolvePatientAsync(byId: false, normalized);
     }
 
-    private async void PatientIdBox_LostFocus(object sender, RoutedEventArgs e)
+    private async Task CommitPatientIdAsync()
     {
         string typed = PatientIdBox.Text.Trim().ToUpperInvariant();
         if (typed.Length == 0 || (typed == _resolvedPatientId && HasValidPatient)) return;
         await ResolvePatientAsync(byId: true, typed);
+    }
+
+    private async void PatientNumberBox_LostFocus(object sender, RoutedEventArgs e) =>
+        await CommitPatientNumberAsync();
+
+    private async void PatientIdBox_LostFocus(object sender, RoutedEventArgs e) =>
+        await CommitPatientIdAsync();
+
+    private async void PatientNumberBox_KeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        if (e.Key != VirtualKey.Enter) return;
+        e.Handled = true;
+        await CommitPatientNumberAsync();
+    }
+
+    private async void PatientIdBox_KeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        if (e.Key != VirtualKey.Enter) return;
+        e.Handled = true;
+        await CommitPatientIdAsync();
     }
 
     private async Task ResolvePatientAsync(bool byId, string value)
@@ -238,15 +295,15 @@ public sealed partial class MainPage : Page
                 _resolvedPatientId = null;
                 _updatingPatientFields = true;
                 PatientNameBox.Text = "";
-                if (!byId) PatientIdBox.Text = "";
+                if (!byId) SetPatientIdText("");
                 _updatingPatientFields = false;
                 SetStatus("查無患者", "PD011M1 沒有符合的有效紀錄；不允許在未確認身分時拍照。", InfoBarSeverity.Warning);
                 return;
             }
 
             _updatingPatientFields = true;
-            PatientNumberBox.Text = patient.Number;
-            PatientIdBox.Text = patient.DisplayId;
+            SetPatientNumberText(patient.Number);
+            SetPatientIdText(patient.DisplayId);
             PatientNameBox.Text = patient.Name;
             _updatingPatientFields = false;
             _resolvedPatientNumber = patient.Number;
@@ -261,7 +318,7 @@ public sealed partial class MainPage : Page
             _resolvedPatientId = null;
             _updatingPatientFields = true;
             PatientNameBox.Text = "";
-            if (!byId) PatientIdBox.Text = "";
+            if (!byId) SetPatientIdText("");
             _updatingPatientFields = false;
             SetStatus("無法查詢患者", ex is InvalidDataException ? ex.Message :
                 "DBF 暫時無法讀取，請檢查路徑或稍後再試。", InfoBarSeverity.Error);
@@ -307,7 +364,7 @@ public sealed partial class MainPage : Page
             _resolvedPatientNumber = null;
             _resolvedPatientId = null;
             _updatingPatientFields = true;
-            PatientIdBox.Text = "";
+            SetPatientIdText("");
             PatientNameBox.Text = "";
             _updatingPatientFields = false;
             PatientDbfPathBox.Text = path;

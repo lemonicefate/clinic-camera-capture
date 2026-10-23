@@ -1,6 +1,6 @@
 # Clinic Camera Capture — ARCHITECTURE.md
 
-**範圍：** Windows 原生相機 UI + 病歷號與本地日期分批存檔 + 選配 PD011M1 唯讀查詢（MVP v0.6；HIS 影像索引仍不連接）。
+**範圍：** Windows 原生相機 UI + 病歷號與本地日期分批存檔 + 選配 PD011M1 唯讀查詢（MVP v0.6.1；HIS 影像索引仍不連接）。
 
 詳見 [SPEC.md](SPEC.md) 及 [DESIGN.md](DESIGN.md)。
 
