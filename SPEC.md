@@ -1,6 +1,6 @@
 # Clinic Camera Capture — SPEC.md
 
-**版本：** MVP v0.6.1，2026-10-23
+**版本：** MVP v0.6.2，2026-10-28
 
 **平台：** Windows 10 x64（診間為 Build 19045）、Windows 11
 
@@ -19,11 +19,11 @@
 - Microsoft `usbvideo.inf` 驅動正常；診間曾測試 v0.1，預覽／拍照成功，使用者回報最大解析度 640×480。
 - **不代表 v0.3 的錄影、UI、快捷鍵或相機重連已通過實機驗證。**
 
-## 2. MVP v0.6.1 功能需求
+## 2. MVP v0.6.2 功能需求
 
 ### FR-01 設備探索、預覽
 
-以 `DeviceInformation.FindAllAsync(DeviceClass.VideoCapture)` 取得設備，依 DeviceId 記憶相機選擇，未設定時優先選 `USB2.0 PC CAMERA`。使用 `MediaCapture`＋`MediaFrameSource` 預覽、可選擇驅動宣告的 Subtype／FPS／解析度；連線錯誤時提示並可重試。停止時釋放相機。
+以 `DeviceInformation.FindAllAsync(DeviceClass.VideoCapture)` 取得設備，依 DeviceId 記憶相機選擇，未設定時優先選 `USB2.0 PC CAMERA`。使用 `MediaCapture`＋`MediaFrameSource` 預覽、可選擇驅動宣告的 Subtype／FPS／解析度；連線錯誤時提示並可重試。停止時釋放相機。**預覽中 CameraPicker 仍可選另一台 USB 攝影機；選取後立即釋放舊的 MediaCapture，依 DeviceId 初始化新相機，成功才保存新選擇。切換失敗時回復原選取及嘗試重啟原預覽；錄影中禁止切換，拍照／初始化進行時停用選單。**
 
 ### FR-02 全螢幕介面
 

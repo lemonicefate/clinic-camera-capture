@@ -1,6 +1,6 @@
 # Clinic Camera Capture — ARCHITECTURE.md
 
-**範圍：** Windows 原生相機 UI + 病歷號與本地日期分批存檔 + 選配 PD011M1 唯讀查詢（MVP v0.6.1；HIS 影像索引仍不連接）。
+**範圍：** Windows 原生相機 UI + 預覽中 USB 攝影機切換 + 病歷號與日期分批存檔 + 選配 PD011M1 唯讀查詢（MVP v0.6.2；HIS 影像索引仍不連接）。
 
 詳見 [SPEC.md](SPEC.md) 及 [DESIGN.md](DESIGN.md)。
 
@@ -59,7 +59,7 @@ flowchart TD
 3. `MediaCapture.InitializeAsync` 使用指定 `VideoDeviceId`、`StreamingCaptureMode.Video`、`MemoryPreference.Cpu`、`SharingMode.ExclusiveControl`。
 4. 選擇 Color `MediaFrameSource`；透過 `MediaSource.CreateFromMediaFrameSource` 預覽。
 5. 設定抽屜可查看並嘗試切換 `SupportedFormats`。**來源預覽格式不保證等同照片拍攝格式**。
-6. 連線、格式切換、拍照、錄影透過 `_cameraGate` 串行控制，停止時 Dispose 相機；中斷後必須再確認重連情境。
+6. 連線、格式切換、拍照、錄影透過 `_cameraGate` 串行控制，停止時 Dispose 相機。v0.6.2：活動中相機仍可在 ComboBox 變更；只有與目前 `_activeCameraId` 不同且未忙碌／未錄影時觸發 `SwitchCameraAsync`；它先釋放舊 `MediaCapture` 再建立新相機，**僅成功後寫入 CameraId 偏好**。初始化失敗則回選原裝置並嘗試恢復原預覽。尚未用兩台實際 USB 裝置測試獨占驅動的釋放與切換。
 
 診間已知 Windows 10 Build 19045 有兩個 Microsoft UVC 裝置，使用者在較早 MVP 版本已成功預覽／拍照（640×480）。**v0.3 的全螢幕、快捷鍵、影片錄製仍需診間實測。**
 

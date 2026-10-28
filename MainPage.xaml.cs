@@ -43,6 +43,7 @@ public sealed partial class MainPage : Page
     private string? _resolvedPatientNumber;
     private string? _resolvedPatientId;
     private MediaCapture? _camera;
+    private string? _activeCameraId;
     private MediaFrameSource? _frameSource;
     private List<FormatChoice> _supportedFormats = new();
     private bool _loadingUi = true;
@@ -109,7 +110,9 @@ public sealed partial class MainPage : Page
 
     private void UpdateButtons()
     {
-        CameraPicker.IsEnabled = !_busy && !_recording && _camera is null;
+        // Allow live device switching; the picker is disabled only while
+        // another camera operation or recording is in progress.
+        CameraPicker.IsEnabled = !_busy && !_recording;
         RefreshButton.IsEnabled = !_busy && !_recording;
         StartButton.IsEnabled = !_busy && !_recording && _camera is null
             && CameraPicker.SelectedItem is CameraChoice;
@@ -425,14 +428,37 @@ public sealed partial class MainPage : Page
     private void CloseSettingsButton_Click(object sender, RoutedEventArgs e) =>
         SettingsLayer.Visibility = Visibility.Collapsed;
 
-    private void CameraPicker_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    private async void CameraPicker_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (CameraPicker.SelectedItem is CameraChoice choice && !_loadingUi)
-        {
-            _preferences.CameraId = choice.Id;
-            SavePreferences();
-        }
-        UpdateButtons();
+        // RefreshCamerasAsync and device startup also change SelectedItem.
+        // Ignore programmatic/busy transitions; connect explicitly at startup.
+        if (_loadingUi || _busy || _recording) return;
+        if (CameraPicker.SelectedItem is not CameraChoice choice) return;
+        if (_camera is not null && !string.Equals(_activeCameraId, choice.Id, StringComparison.Ordinal))
+            await SwitchCameraAsync(choice);
+        else
+            UpdateButtons();
+    }
+
+    private async Task SwitchCameraAsync(CameraChoice requested)
+    {
+        // Keep the old DeviceId until the new camera is fully initialized.
+        // In case of failure, return selection AND active preview to old device.
+        string? previousId = _activeCameraId;
+        if (await StartCameraAsync(requested, keepSettingsOpen: true)) return;
+        if (previousId is null) return;
+
+        var previous = (CameraPicker.ItemsSource as IEnumerable<CameraChoice>)?
+            .FirstOrDefault(c => c.Id == previousId);
+        if (previous is null) return;
+        _loadingUi = true;
+        try { CameraPicker.SelectedItem = previous; }
+        finally { _loadingUi = false; }
+
+        if (await StartCameraAsync(previous, keepSettingsOpen: true))
+            SetStatus("切換失敗，已恢復原相機", "無法啟動新選擇的裝置；原相機預覽已恢復。", InfoBarSeverity.Warning);
+        else
+            SetStatus("相機切換失敗", "新舊相機皆無法啟動，請檢查連線與 Windows 相機使用權限。", InfoBarSeverity.Error);
     }
 
     private void ModePicker_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -573,16 +599,16 @@ public sealed partial class MainPage : Page
 
     private async void StartButton_Click(object sender, RoutedEventArgs e) => await StartCameraAsync();
 
-    private async Task StartCameraAsync()
+    private async Task<bool> StartCameraAsync(CameraChoice? requested = null, bool keepSettingsOpen = false)
     {
-        if (_recording) return;
+        if (_recording) return false;
         await _cameraGate.WaitAsync();
         _busy = true;
         UpdateButtons();
         try
         {
-            if (CameraPicker.SelectedItem is not CameraChoice choice)
-                throw new InvalidOperationException("尚未選擇攝影機。");
+            var choice = requested ?? CameraPicker.SelectedItem as CameraChoice
+                ?? throw new InvalidOperationException("尚未選擇攝影機。");
 
             CloseCamera();
             _camera = new MediaCapture();
@@ -617,16 +643,19 @@ public sealed partial class MainPage : Page
             FrameFormatNote.Text = $"Windows 回報 {_supportedFormats.Count} 種格式。預覽尺寸與實際拍照尺寸可能不同。";
             PreviewElement.Source = MediaSource.CreateFromMediaFrameSource(_frameSource);
             EmptyPreviewText.Visibility = Visibility.Collapsed;
+            _activeCameraId = choice.Id;
             _preferences.CameraId = choice.Id;
             SavePreferences();
             SetStatus("攝影機已連線", DeviceDetailText.Text);
-            SettingsLayer.Visibility = Visibility.Collapsed;
+            if (!keepSettingsOpen) SettingsLayer.Visibility = Visibility.Collapsed;
+            return true;
         }
         catch (Exception ex)
         {
             CloseCamera();
             EmptyPreviewText.Text = "開啟左上角設定，重新選擇影像裝置。";
             SetStatus("攝影機初始化失敗", ex.Message, InfoBarSeverity.Error);
+            return false;
         }
         finally
         {
@@ -725,6 +754,7 @@ public sealed partial class MainPage : Page
         PreviewElement.Source = null;
         EmptyPreviewText.Visibility = Visibility.Visible;
         _frameSource = null;
+        _activeCameraId = null;
         _supportedFormats.Clear();
         FrameFormatPicker.ItemsSource = null;
         FrameFormatNote.Text = "開始預覽後可查看裝置的支援格式。";

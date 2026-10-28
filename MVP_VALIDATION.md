@@ -1,4 +1,29 @@
-# MVP v0.6.1 diagnostics and validation — 2026-10-23
+# MVP v0.6.2 diagnostics and validation — 2026-10-28
+
+## v0.6.2 two USB cameras: select second camera while previewing first
+
+**Reproduction boundary:** Development host has no connected PnP Camera-class devices. The clinic Windows 10 host with two USB cameras is not available as a connected node. Therefore we did not claim physical dual-camera reproduction and never touched HIS or camera settings on the production computer.
+
+**Diagnosing-bugs Phase 1 red command (actual source-state contract):**
+`powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tests\CameraSwitch.Regression.ps1`
+
+Against original v0.6.1 code, the command exited **1** and printed:
+
+```text
+FAIL: Selector disabled whenever a camera is connected
+FAIL: Selection change does not request any active camera switch
+```
+
+The focused contract script inspects exactly the two UI event paths responsible for this symptom; this is **code-level reproduction**, not real USB input/output.
+
+**Ranked hypotheses & falsifiable predictions after red:** (1) `UpdateButtons` explicitly disables `CameraPicker` whenever `_camera != null` (confirmed from the assignment); (2) `CameraPicker_SelectionChanged` only saves preferences and never invokes `StartCameraAsync`/reinitialization (confirmed from handler); (3) even if selection is enabled, `MediaCapture` exclusive ownership may prevent switching unless old preview/capture is disposed (existing `CloseCamera` detaches preview and disposes, **not yet verified against actual hardware**); (4) ambiguous enumeration indices could address the wrong camera (unlikely because IDs are used, but field confirmation pending).
+
+**Fix:** Keep selection enabled whenever not busy/recording; on a genuine user selection change while a camera is connected, compare IDs and call `SwitchCameraAsync`. Reuse serialized `StartCameraAsync` to release the old preview/camera then initialize new ID, updating persisted CameraId only on success. If initialization fails, restore the old selection and attempt to restart the previous camera. Do not switch mid-recording or camera operation. Preserve the existing media capture and photo/DBF boundaries.
+
+**After fix:** the same source-state red command returns **PASS**. Debug build, synthetic capture/DBF test suite, and self-contained desktop launch should be checked independently. **Full hardware acceptance still requires USB A → B → A and a failed-switch recovery test on the clinic PC.** Use non-patient synthetic objects and fake patient references.
+
+## Historical diagnostic notes
+
 
 ## v0.6.1 regression: patient fields disappear after successful lookup
 
