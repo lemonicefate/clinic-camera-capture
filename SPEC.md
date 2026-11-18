@@ -1,6 +1,6 @@
 # Clinic Camera Capture — SPEC.md
 
-**版本：** MVP v0.6.3，2026-10-28
+**版本：** MVP v0.6.4，2026-11-18（v0.6.3 功能，修復 CI 發佈包 PRI 資源檔）
 
 **平台：** Windows 10 x64（診間為 Build 19045）、Windows 11
 

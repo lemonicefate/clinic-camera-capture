@@ -1,6 +1,8 @@
-# Clinic Camera Capture — Windows Native Camera MVP v0.6.3
+# Clinic Camera Capture — Windows Native Camera MVP v0.6.4
 
 **C# + XAML / WinUI 3 / .NET 10 / Windows MediaCapture**
+
+**v0.6.4 發佈修復：** v0.6.3 的 GitHub ZIP 曾產生不完整的 `ClinicCameraCapture.pri`，導致 WinUI 啟動失敗。v0.6.4 使用一致的 self-contained 編譯／發佈參數、固定 SDK 版本，且 CI 會檢查 PRI 完整性；修復後的 GitHub CI ZIP 已在開發機 Windows 11 確認啟動。**請不要使用 v0.6.3 的舊 ZIP。診間 Windows 10 仍需單獨實測。**
 
 非臨床測試版：新增 `PD011M1.dbf` **選配、唯讀**患者查詢，但不修改 HIS 的 DBF/CDX、也不自動建立 `CH013M1` 影像索引。**開發及測試只用合成 DBF／假號碼與非病患物件，絕不將病患資料提交至公開 GitHub。**
 
@@ -42,10 +44,10 @@
 
 ## Windows 10 x64 測試版下載與自動發佈
 
-- 在 [GitHub Releases](https://github.com/lemonicefate/clinic-camera-capture/releases) 下載 `ClinicCameraCapture-vX.Y.Z-win-x64.zip`，**解壓縮整個 ZIP** 到獨立資料夾（例如 `C:\ClinicCameraCapture\v0.6.3\`），再執行 `ClinicCameraCapture.exe`；不可只複製 EXE，也不可直接在壓縮檔內啟動。
+- 在 [GitHub Releases](https://github.com/lemonicefate/clinic-camera-capture/releases) 下載 `ClinicCameraCapture-vX.Y.Z-win-x64.zip`，**解壓縮整個 ZIP** 到獨立資料夾（例如 `C:\ClinicCameraCapture\v0.6.4\`），再執行 `ClinicCameraCapture.exe`；不可只複製 EXE，也不可直接在壓縮檔內啟動。
 - Release 的 Assets 同時提供 `SHA256.txt` 供校驗；ZIP 由 Actions 測試通過的完整 self-contained 發佈資料夾打包而成，只在發佈時加上版本號。發佈檔包含 .NET Runtime 和 Windows App SDK 相依檔，無需在診間安裝 .NET SDK 或 Visual Studio。
 - GitHub Actions `.github/workflows/windows-release.yml` 會在 `main` push、PR、手動觸發執行 Windows x64 編譯、合成照片與 DBF 測試、相機切換程式回歸測試、self-contained publish、ZIP 檔案檢查；保留短期 CI artifact。
-- 僅對推送的 `vX.Y.Z` tag（例如 `v0.6.3`）在上述工作成功後自動建立 **prerelease**，並上傳 ZIP。GitHub Release 是公開下載，**不得**包含真實病患照片／病歷資料／`settings.json`／正式 HIS DBF。
+- 僅對推送的 `vX.Y.Z` tag（例如 `v0.6.4`）在上述工作成功後自動建立 **prerelease**，並上傳 ZIP。GitHub Release 是公開下載，**不得**包含真實病患照片／病歷資料／`settings.json`／正式 HIS DBF。
 - 更新時先關閉 App，再將新 ZIP 解壓到**新的版本資料夾**。設定保存在使用者的 `%LOCALAPPDATA%\\ClinicCameraCapture-MVP\\settings.json`，不隨程式資料夾移動。仍需用非病患物件與合成病歷資料完成診間硬體驗收，不代表已授權臨床正式使用。
 
 開發機手動重現發佈（從專案根目錄執行）：

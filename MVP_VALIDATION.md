@@ -1,4 +1,16 @@
-# MVP v0.6.3 diagnostics and validation — 2026-10-28
+# MVP v0.6.4 diagnostics and validation — 2026-11-18
+
+## v0.6.4 GitHub Release startup regression (2026-11-18)
+
+**User symptom:** v0.6.3 GitHub Release ZIP was fully extracted on clinic Win10, but double-clicking `ClinicCameraCapture.exe` showed no window. This agent cannot directly inspect the clinic host.
+
+**Actual reproduction on Windows 11 development PC:** downloaded the exact public `v0.6.3` Release ZIP, verified its SHA256, extracted it and launched the EXE. It exited with `0xC000027B`; Windows Application Error Event 1000 identified `Microsoft.UI.Xaml.dll` as the faulting module. The developer's own local self-contained publish launched normally.
+
+**Isolated fault:** GitHub-built `ClinicCameraCapture.pri` was 11,216 bytes, while the working local publish's PRI was 2,195,120 bytes. Replacing *only* the GitHub package's PRI with the local one made the unchanged GitHub EXE and all other DLLs start and display its WinUI window.
+
+**CI correction:** pin .NET SDK 10.0.402 and use the same unpackaged/self-contained properties for CI build and publish. Reject any ZIP if the app PRI is absent or under 262,144 bytes. The repaired GitHub CI (main run 44267091912) generated a 2,195,120-byte PRI, passed its synthetic tests, and uploaded a ZIP. The ZIP was then downloaded from GitHub, checksum-verified and launched successfully on the developer's Windows 11 desktop without file substitutions.
+
+**Limits:** the isolated PRI swap identifies the broken launch artifact; changing both SDK pin and build-property consistency means the individual contribution of each change was not separately established. Clinic Windows 10 physical startup, USB devices, MP4, UNC storage and sustained use must still be tested. Do not treat GitHub CI success alone as clinical deployment approval.
 
 ## v0.6.3 JPG default and clinic field-test updates
 
