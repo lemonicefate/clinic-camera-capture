@@ -40,6 +40,23 @@
 
 開發機可雙擊 `Start-MVP.cmd`。診間 Win10 要使用完整的 self-contained x64 發佈資料夾，不可只複製 EXE。
 
+## Windows 10 x64 測試版下載與自動發佈
+
+- 在 [GitHub Releases](https://github.com/lemonicefate/clinic-camera-capture/releases) 下載 `ClinicCameraCapture-vX.Y.Z-win-x64.zip`，**解壓縮整個 ZIP** 到獨立資料夾（例如 `C:\ClinicCameraCapture\v0.6.3\`），再執行 `ClinicCameraCapture.exe`；不可只複製 EXE，也不可直接在壓縮檔內啟動。
+- Release 的 Assets 同時提供 `SHA256.txt` 供校驗；ZIP 由 Actions 測試通過的完整 self-contained 發佈資料夾打包而成，只在發佈時加上版本號。發佈檔包含 .NET Runtime 和 Windows App SDK 相依檔，無需在診間安裝 .NET SDK 或 Visual Studio。
+- GitHub Actions `.github/workflows/windows-release.yml` 會在 `main` push、PR、手動觸發執行 Windows x64 編譯、合成照片與 DBF 測試、相機切換程式回歸測試、self-contained publish、ZIP 檔案檢查；保留短期 CI artifact。
+- 僅對推送的 `vX.Y.Z` tag（例如 `v0.6.3`）在上述工作成功後自動建立 **prerelease**，並上傳 ZIP。GitHub Release 是公開下載，**不得**包含真實病患照片／病歷資料／`settings.json`／正式 HIS DBF。
+- 更新時先關閉 App，再將新 ZIP 解壓到**新的版本資料夾**。設定保存在使用者的 `%LOCALAPPDATA%\\ClinicCameraCapture-MVP\\settings.json`，不隨程式資料夾移動。仍需用非病患物件與合成病歷資料完成診間硬體驗收，不代表已授權臨床正式使用。
+
+開發機手動重現發佈（從專案根目錄執行）：
+
+```powershell
+dotnet publish .\ClinicCameraCapture.csproj -c Release -r win-x64 --self-contained true `
+  -p:Platform=x64 -p:WindowsPackageType=None `
+  -p:WindowsAppSDKSelfContained=true -p:PublishTrimmed=false `
+  -o .\publish\win-x64
+```
+
 ## 驗證說明
 
 已自動測試：RGB 無損回讀、BMP BI_RGB、存檔失敗保護、流水號補零、01–99、防覆蓋、相簿分組及任意路徑正規化。新增**完全合成的 VFP DBF** 測試，通過 CP950 中文姓名、NUM／ID 雙向查詢、ID 空白替代、刪除紀錄忽略，以及與另一個程序共享開啟的唯讀測試。**所有 DBF 測試只用合成資料，未讀取正式 HIS。**
