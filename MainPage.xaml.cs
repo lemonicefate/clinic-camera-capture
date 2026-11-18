@@ -472,7 +472,7 @@ public sealed partial class MainPage : Page
     private void FormatPicker_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (_loadingUi) return;
-        _preferences.Format = SelectedTag(FormatPicker, "png");
+        _preferences.Format = SelectedTag(FormatPicker, "jpg");
         SavePreferences();
     }
 

@@ -1,6 +1,6 @@
 # Clinic Camera Capture — ARCHITECTURE.md
 
-**範圍：** Windows 原生相機 UI + 預覽中 USB 攝影機切換 + 病歷號與日期分批存檔 + 選配 PD011M1 唯讀查詢（MVP v0.6.2；HIS 影像索引仍不連接）。
+**範圍：** Windows 原生相機 UI + 預覽中 USB 攝影機切換 + 病歷號與日期分批存檔 + 選配 PD011M1 唯讀查詢（MVP v0.6.3；HIS 影像索引仍不連接）。
 
 詳見 [SPEC.md](SPEC.md) 及 [DESIGN.md](DESIGN.md)。
 
@@ -17,7 +17,7 @@ flowchart TD
     UI --> Identity[CaptureIdentity: 六位數驗證]
     Identity --> Store
     Store --> Folder[使用者儲存根目錄/病歷號_yyyyMMdd]
-    Folder --> Local[PNG/BMP/MP4 檔案]
+    Folder --> Local[JPG/PNG/BMP/MP4 檔案]
     Camera --> Video[MP4 RecordToStorageFile]
     Video --> Local
     UI --> Prefs[CameraPreferences JSON]
@@ -42,7 +42,7 @@ flowchart TD
 | `MainPage.xaml.cs` | 裝置枚舉、相機初始化、按鍵、拍照、錄影、模式與畫面狀態；由 `SemaphoreSlim` 序列化相機操作 |
 | `CameraPreferences.cs` | 讀寫 UI 設定 JSON 與 OutputFolderPolicy 路徑格式正規化（不限制 Windows 資料夾位置、不儲存病歷號） |
 | `CaptureIdentity.cs` | 1–6 位 ASCII 數字標準化為六位、照片 01–99 命名與錄影命名 |
-| `CaptureStore.cs` | 以病歷號與 Windows 本地日期解析儲存子資料夾；PNG/BMP 校驗、同磁碟暫存／驗證、跨格式 01–99 編號；本機 mutex 防止同目錄程序互相覆寫 |
+| `CaptureStore.cs` | 以病歷號與 Windows 本地日期解析儲存子資料夾；預設 JPG 可解碼與尺寸校驗、PNG/BMP RGB 無損校驗、同磁碟暫存／驗證、跨格式 01–99 編號；本機 mutex 防止同目錄程序互相覆寫 |
 | `PhotoBatch.cs` | 本次 App 執行期間，以標準化六位號碼隔離同病歷號照片清單 |
 | `PatientDbfPathPolicy.cs` | 檢查設定路徑的檔名必須為 PD011M1.dbf，不開啟資料 |
 | `PatientDbfReader.cs` | 非獨占 FileAccess.Read、FileShare.ReadWrite/Delete，解析 DBF/C/N 欄位與 CP950，排除刪除標記並在 RAM 建 NUM/ID lookup |
@@ -77,8 +77,8 @@ sequenceDiagram
     UI->>Win: PrepareLowLagPhotoCaptureAsync(BGRA8)
     UI->>Win: CaptureAsync()
     Win-->>UI: SoftwareBitmap
-    UI->>Store: SaveAsync(bitmap, png/bmp, reference)
-    Store->>Store: 編碼後解碼，比對 RGB/解析度
+    UI->>Store: SaveAsync(bitmap, jpg/png/bmp, reference)
+    Store->>Store: JPG 解碼及尺寸 / PNG/BMP 無損像素校驗
     Store->>Disk: .tmp 寫入與 Flush
     Store->>Disk: 讀回與內容一致性驗證
     Store->>Disk: File.Move 不覆寫正式檔名
@@ -87,9 +87,9 @@ sequenceDiagram
     UI->>UI: 更新縮圖；縮圖失敗不刪已存照片
 ```
 
-- PNG 保存 RGB 像素無損；BMP 檢查 `BI_RGB` 未壓縮格式。來源已是 MJPEG 等有損訊號的情形無法反向復原。
+- JPG 為新安裝預設、有損壓縮，驗證 JPEG 標記、解碼尺寸及實際磁碟內容；PNG 保存 RGB 像素無損；BMP 檢查 `BI_RGB` 未壓縮格式。來源已是 MJPEG 等有損訊號的情形無法反向復原。
 - 照片與影片統一儲存在 `<OutputFolder>/<六碼病歷號>_<yyyyMMdd>/`，例 `D:\\ClinicPhotos\\000090_20261023\\`。日期是相機按下快門時（照片）或開始錄影時（MP4）的本地日期，**不是開啟 App 的日期**。
-- 照片檔名維持 `000090_01.png` ... `000090_99.bmp`；**同病歷號同日重新開程式也沿用資料夾**，沿用已用流水號，跨格式編號不重複；隔日另起資料夾與 `_01` 序號。舊版已存在的純病歷號資料夾不搬移。
+- 照片檔名可為 `000090_01.jpg`、`000090_02.png` 或 `000090_03.bmp`；**同病歷號同日重新開程式也沿用資料夾**，沿用已用流水號，跨格式編號不重複；隔日另起資料夾與 `_01` 序號。舊版已存在的純病歷號資料夾不搬移。
 - 預選首個空閒編號，利用同目錄暫存＋非覆寫 `File.Move` 提交；本機跨程序 Mutex 保護同病歷號的流水號競爭。
 - 此流程**不包含** `CH013M1` 更新；不會產生或同步正式 HIS 的影像索引。
 - 仍未做正式臨床等級的跨程序鎖定、意外斷電保證、外部備份或存取稽核。
@@ -107,7 +107,7 @@ sequenceDiagram
 ```text
 %LOCALAPPDATA%\ClinicCameraCapture-MVP\
   settings.json          # CameraId / Format / Shortcut / Mode / FullScreen / OutputFolder
-  captures\              # 測試 PNG、BMP、MP4，嚴禁進 Git
+  captures\              # 測試 JPG、PNG、BMP、MP4，嚴禁進 Git
 ```
 
 - 快捷鍵 F8/F9/F10/F12 改為 `CameraRoot.KeyboardAccelerators`，由框架處理焦點子控制項；**僅前景有效**，不註冊 `RegisterHotKey`。

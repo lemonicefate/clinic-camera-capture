@@ -38,31 +38,38 @@ public sealed class CaptureStore
     private async Task<SavedCapture> SaveCoreAsync(SoftwareBitmap original, string extension,
         string? patientNumber, DateOnly? captureDate)
     {
-        if (extension is not ("png" or "bmp"))
-            throw new ArgumentException("Only lossless PNG and uncompressed BMP are supported.", nameof(extension));
+        if (extension is not ("jpg" or "png" or "bmp"))
+            throw new ArgumentException("Supported photo formats: JPG, PNG, BMP.", nameof(extension));
         if (patientNumber is not null) CaptureIdentity.Require(patientNumber);
 
         // Preserve the original extension only; normalized patient references are
         // never allowed to become a path segment.
         var normalizedPatient = patientNumber is null ? null : CaptureIdentity.Require(patientNumber);
 
-        // Converting to BGRA8 is a pixel layout conversion; never use JPEG on this path.
+        // Capture remains uncompressed BGRA8. JPG is intentionally lossy;
+        // PNG/BMP keep the original pixel-exact verification contract.
         using var pixels = SoftwareBitmap.Convert(original, BitmapPixelFormat.Bgra8, BitmapAlphaMode.Ignore);
         using var stream = new InMemoryRandomAccessStream();
-        var codec = extension == "png" ? BitmapEncoder.PngEncoderId : BitmapEncoder.BmpEncoderId;
+        var codec = extension switch
+        {
+            "jpg" => BitmapEncoder.JpegEncoderId,
+            "png" => BitmapEncoder.PngEncoderId,
+            _ => BitmapEncoder.BmpEncoderId
+        };
         var encoder = await BitmapEncoder.CreateAsync(codec, stream);
         encoder.SetSoftwareBitmap(pixels);
         await encoder.FlushAsync();
         stream.Seek(0);
 
-        // Decode the encoded file in memory and check that RGB pixel data is identical.
+        // Every encoded image must decode and retain dimensions; for lossless
+        // formats the decoded RGB must additionally match the captured frame.
         var decoder = await BitmapDecoder.CreateAsync(stream);
         if (decoder.PixelWidth != pixels.PixelWidth || decoder.PixelHeight != pixels.PixelHeight)
             throw new InvalidDataException("Image dimensions changed during encoding.");
         using (var decoded = await decoder.GetSoftwareBitmapAsync(
                    BitmapPixelFormat.Bgra8, BitmapAlphaMode.Ignore))
         {
-            if (!EqualRgb(pixels, decoded))
+            if (extension != "jpg" && !EqualRgb(pixels, decoded))
                 throw new InvalidDataException("Lossless round-trip pixel mismatch.");
         }
 
@@ -73,6 +80,9 @@ public sealed class CaptureStore
         await reader.LoadAsync((uint)stream.Size);
         var encoded = new byte[(int)stream.Size];
         reader.ReadBytes(encoded);
+        if (extension == "jpg" && (encoded.Length < 4 || encoded[0] != 0xFF || encoded[1] != 0xD8 ||
+                                  encoded[^2] != 0xFF || encoded[^1] != 0xD9))
+            throw new InvalidDataException("JPEG file markers are invalid.");
         if (extension == "bmp" && (encoded.Length < 34 || BitConverter.ToUInt32(encoded, 30) != 0))
             throw new InvalidDataException("BMP was not encoded as uncompressed BI_RGB.");
 

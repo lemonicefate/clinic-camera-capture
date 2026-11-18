@@ -139,6 +139,7 @@
                         <TextBlock Text="照片格式" FontWeight="SemiBold"/>
                         <ComboBox x:Name="FormatPicker" Width="390" SelectedIndex="0"
                                   SelectionChanged="FormatPicker_SelectionChanged">
+                            <ComboBoxItem Content="JPG（預設，有損壓縮）" Tag="jpg"/>
                             <ComboBoxItem Content="PNG（無損壓縮）" Tag="png"/>
                             <ComboBoxItem Content="BMP（未壓縮）" Tag="bmp"/>
                         </ComboBox>

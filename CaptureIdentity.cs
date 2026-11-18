@@ -19,8 +19,8 @@ public static class CaptureIdentity
         var normalized = Require(patientNumber);
         if (sequence is < 1 or > 99)
             throw new ArgumentOutOfRangeException(nameof(sequence), "每個病歷號只允許 01 到 99。");
-        if (extension is not ("png" or "bmp"))
-            throw new ArgumentException("照片格式僅支援 PNG 或 BMP。", nameof(extension));
+        if (extension is not ("jpg" or "png" or "bmp"))
+            throw new ArgumentException("照片格式僅支援 JPG、PNG 或 BMP。", nameof(extension));
         return $"{normalized}_{sequence:00}.{extension}";
     }
 

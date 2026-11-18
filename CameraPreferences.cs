@@ -6,7 +6,7 @@ namespace ClinicCameraCapture;
 public sealed class CameraPreferences
 {
     public string? CameraId { get; set; }
-    public string Format { get; set; } = "png";
+    public string Format { get; set; } = "jpg";
     public string Shortcut { get; set; } = "F9";
     public string Mode { get; set; } = "photo";
     public bool FullScreen { get; set; } = true;
@@ -24,7 +24,7 @@ public sealed class CameraPreferences
             if (!File.Exists(ConfigPath)) return new CameraPreferences();
             var saved = JsonSerializer.Deserialize<CameraPreferences>(File.ReadAllText(ConfigPath))
                         ?? new CameraPreferences();
-            if (saved.Format is not ("png" or "bmp")) saved.Format = "png";
+            if (saved.Format is not ("jpg" or "png" or "bmp")) saved.Format = "jpg";
             if (saved.Shortcut is not ("F8" or "F9" or "F10" or "F12")) saved.Shortcut = "F9";
             if (saved.Mode is not ("photo" or "video")) saved.Mode = "photo";
             try { saved.OutputFolder = OutputFolderPolicy.Normalize(saved.OutputFolder); }

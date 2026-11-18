@@ -5,8 +5,8 @@
 - Use only generated synthetic frames and local disposable test directories in automated tests.
 - Do not ingest, copy, upload, log, or commit patient data or actual patient photos.
 - The capture API must remain Windows MediaCapture/Media Foundation native; legacy VideoCapX OCX cannot be a required component.
-- Photo saves must not write JPEG by default. PNG must round-trip without RGB pixel changes; BMP must be uncompressed BI_RGB.
-- Never report successful save until the output file and RGB pixels have been validated. A failed capture must not create a success record.
+- JPG is the user-requested default photo format (lossy); preserve opt-in lossless PNG and uncompressed BI_RGB BMP. JPEG must decode with correct dimensions and valid markers; PNG/BMP must round-trip without RGB pixel changes.
+- Never report successful save until the encoded image is decodable and the on-disk bytes have been validated; additionally validate pixel-exact RGB for PNG/BMP. A failed capture must not create a success record.
 - Keep camera selection based on device identity rather than unstable list index. Release camera handles on errors/disconnection.
 - A narrowly scoped HIS integration is authorized **at runtime only**: open a user-chosen PD011M1.dbf with FileMode.Open, FileAccess.Read, and FileShare.ReadWrite|Delete to look up NUM, ID, NAME. Never read real patient data during development, automated tests, debugging, or agent inspection; use synthetic DBF fixtures or an explicitly supplied de-identified mirror.
 - Do not open, change, rebuild or create HIS CDX/FPT, CH013M1 or other production DBF/index files. Never persist patient identity fields in settings, logs, GitHub, tests, or reports.

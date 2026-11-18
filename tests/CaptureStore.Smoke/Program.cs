@@ -29,9 +29,20 @@ internal static class Program
                 frame.CopyFromBuffer(writer.DetachBuffer());
             }
 
+            Require(new CameraPreferences().Format == "jpg", "new-install default photo format must be JPG");
             var store = new CaptureStore(root);
+            var jpg = await store.SaveAsync(frame, "jpg");
             var png = await store.SaveAsync(frame, "png");
             var bmp = await store.SaveAsync(frame, "bmp");
+            var jpegBytes = await File.ReadAllBytesAsync(jpg.FilePath);
+            Require(jpg.FilePath.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase), "JPG file extension");
+            Require(jpg.Width == w && jpg.Height == h, "JPEG dimensions");
+            Require(jpegBytes.Length > 4 && jpegBytes[0] == 0xFF && jpegBytes[1] == 0xD8 &&
+                    jpegBytes[^2] == 0xFF && jpegBytes[^1] == 0xD9, "JPEG SOI/EOI markers");
+            Require(Convert.ToHexString(SHA256.HashData(jpegBytes)) == jpg.Sha256, "JPG disk checksum");
+            Require(new CameraPreferences { Format = "png" }.Format == "png",
+                "explicit PNG choice remains supported");
+            Console.WriteLine("PASS: default JPG, JPEG signature and verified disk write; PNG/BMP stay selectable.");
             Require(png.Width == w && png.Height == h, "PNG dimensions");
             Require(bmp.Width == w && bmp.Height == h, "BMP dimensions");
             Require(png.FilePath.EndsWith(".png") && bmp.FilePath.EndsWith(".bmp"), "formats");
@@ -45,8 +56,8 @@ internal static class Program
             bool rejected = false;
             try {await store.SaveAsync(frame, "jpeg");}
             catch (ArgumentException) {rejected = true;}
-            Require(rejected, "JPEG must be rejected");
-            Console.WriteLine("PASS: lossy format rejected.");
+            Require(rejected, "unsupported .jpeg alias must be rejected (use .jpg)");
+            Console.WriteLine("PASS: unsupported photo extension rejected.");
 
             var blockingPath = Path.Combine(root, "blocked");
             await File.WriteAllTextAsync(blockingPath, "not a directory");
@@ -70,6 +81,12 @@ internal static class Program
             var second = await store.SaveAsync(frame, "png", "000123", captureDate: new DateOnly(2026, 10, 23));
             Require(numbered.FilePath != second.FilePath, "repeated photos never overwrite");
             Console.WriteLine("PASS: six-digit reference naming and collision-free repeated saves.");
+            var patientJpg = await store.SaveAsync(frame, "jpg", "94", captureDate: new DateOnly(2026, 10, 23));
+            var afterJpg = await store.SaveAsync(frame, "png", "000094", captureDate: new DateOnly(2026, 10, 23));
+            Require(Path.GetFileName(patientJpg.FilePath) == "000094_01.jpg" &&
+                    Path.GetFileName(afterJpg.FilePath) == "000094_02.png",
+                "JPG and PNG share the same patient/date sequence without collisions");
+            Console.WriteLine("PASS: JPG and PNG cross-format patient sequence.");
 
             // Requested regression: short decimal IDs must zero-pad to six digits;
             // sequential still photos are named 000090_01.png ... 000090_99.png.
