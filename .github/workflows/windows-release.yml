@@ -28,7 +28,8 @@ jobs:
         run: |
           $tracked = @(git ls-files)
           $blocked = @($tracked | Where-Object {
-            $_ -match '(?i)(^|/)(settings\.json|\.env(?:\..+)?|captures|recordings|photos)/?' -or
+            $_ -match '(?i)(^|/)(captures|recordings|photos)/' -or
+            $_ -match '(?i)(^|/)(settings\.json|\.env(?:\..+)?)$' -or
             $_ -match '(?i)\.(dbf|cdx|fpt|mp4|mov|avi|mkv|jpg|jpeg|bmp|pfx|p12|pem|key|zip|7z|sqlite3?)$'
           })
           if ($blocked.Count -gt 0) {
