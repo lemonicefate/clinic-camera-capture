@@ -21,7 +21,7 @@ jobs:
       - name: Set up .NET 10 SDK
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '10.0.x'
+          dotnet-version: '10.0.402' # Match the development SDK used to produce a working PRI
 
       - name: Reject tracked patient data and local secrets
         shell: pwsh
@@ -38,7 +38,11 @@ jobs:
 
       - name: Compile WinUI x64
         shell: pwsh
-        run: dotnet build .\ClinicCameraCapture.csproj -c Release -p:Platform=x64 -r win-x64 --nologo
+        run: |
+          dotnet build .\ClinicCameraCapture.csproj -c Release -r win-x64 --self-contained true `
+            -p:Platform=x64 -p:WindowsPackageType=None `
+            -p:WindowsAppSDKSelfContained=true -p:PublishTrimmed=false --nologo
+          if ($LASTEXITCODE -ne 0) { throw "WinUI x64 build failed." }
 
       - name: Run synthetic photo and DBF tests
         shell: pwsh
@@ -67,6 +71,15 @@ jobs:
               throw "Missing required self-contained publish file: $required"
             }
           }
+          $pri = Join-Path $app 'ClinicCameraCapture.pri'
+          if (-not (Test-Path $pri)) { throw "WinUI resource index (.pri) missing." }
+          $priBytes = (Get-Item $pri).Length
+          # Broken v0.6.3 release had an 11,216-byte PRI and crashed on startup
+          # with 0xC000027B. A known-good WinUI resource index is ~2.2 MB.
+          if ($priBytes -lt 262144) {
+            throw "WinUI resource index is abnormally small ($priBytes bytes); blocking release."
+          }
+          Write-Host "WinUI PRI length: $priBytes bytes"
           $files = @(Get-ChildItem -LiteralPath $app -Recurse -File)
           if ($files.Count -lt 10) { throw "Publish folder looks incomplete." }
           if (@($files | Where-Object {
